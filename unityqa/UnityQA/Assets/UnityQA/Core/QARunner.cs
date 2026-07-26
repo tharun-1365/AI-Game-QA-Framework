@@ -15,10 +15,10 @@
 //   payload) and QARunner stamps sid/seq/t/frame from the session object.
 //   One door in = sequence integrity (NFR-1.5) is structural, not disciplined.
 //
-// SLICE A TEMPORARY CODE (marked below)
-//   Until Slice B delivers QALogger/ConsoleSink, a 6-line inline subscriber
-//   echoes events to the Console so this slice is demonstrable on its own
-//   (walking-skeleton practice). It is deleted in Slice B, by plan.
+// HISTORY NOTE
+//   Slice A shipped a temporary inline console echo here (walking-skeleton
+//   practice); Slice B removed it when QALogger/ConsoleSink took over the
+//   subscriber role, exactly as the design's §15 plan scheduled.
 // -----------------------------------------------------------------------------
 
 using System.Collections.Generic;
@@ -63,10 +63,8 @@ namespace UnityQA.Core
                 return;
             }
 
-            // ---- SLICE A TEMPORARY: console echo (replaced by ConsoleSink in Slice B) ----
-            if (config.consoleEvents)
-                Bus.Subscribe(e => Debug.Log($"[UnityQA] {e}"));
-            // ------------------------------------------------------------------------------
+            // Slice A's temporary console echo lived here; Slice B replaced it
+            // with the real sink path (QALogger → ConsoleSink), as planned.
         }
 
         private void Update()

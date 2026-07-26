@@ -75,20 +75,49 @@ namespace BenchGame
         /// <summary>True while the ground-check box overlaps the Ground layer.</summary>
         public bool IsGrounded => isGrounded;
 
+        // --- Read-only observation surface added in M2 Slice C -------------
+        // Pure getters over existing state: zero behavior change (regression-
+        // pinned by the M1 tile rulers). A normal game plausibly exposes its
+        // tuning constants; that these feed session.json's gutSpec is the
+        // adapter's business, not this class's ("foreign code" rule, SRS §1.1).
+
+        /// <summary>Authored horizontal speed (GUT-SPEC.md constant).</summary>
+        public float RunSpeed => runSpeed;
+
+        /// <summary>Authored jump apex height (GUT-SPEC.md constant).</summary>
+        public float JumpHeight => jumpHeight;
+
+        /// <summary>Horizontal command consumed this step: -1, 0, or +1.</summary>
+        public float MoveInput => moveInput;
+        // -------------------------------------------------------------------
+
+        // D-008 seam (executed M2 Slice D): commands come through an interface.
+        // With the auto-added KeyboardInputSource this is behaviorally identical
+        // to the previous direct Input.* calls (M1 rulers pin the regression).
+        private IPlayerInputSource input;
+
+        /// <summary>The active input source (read-only observation surface).</summary>
+        public IPlayerInputSource InputSource => input;
+
         private void Awake()
         {
             body = GetComponent<Rigidbody2D>();
+
+            // Any already-attached source wins (a test rig, later an AI agent);
+            // otherwise default to the keyboard — scenes need no editing.
+            input = GetComponent<IPlayerInputSource>();
+            if (input == null)
+                input = gameObject.AddComponent<KeyboardInputSource>();
         }
 
         private void Update()
         {
-            // GetAxisRaw, not GetAxis: raw returns exactly -1/0/+1 with no input
-            // smoothing. Smoothing is feel-polish for real games; for a benchmark
-            // it is a hidden, frame-rate-coupled state variable — so we refuse it.
-            moveInput = Input.GetAxisRaw("Horizontal");
+            // Raw -1/0/+1, unsmoothed (see KeyboardInputSource / D-002): input
+            // smoothing is a hidden frame-rate-coupled state variable — refused.
+            moveInput = input.MoveX;
 
             // Latch, don't act: acting here would couple jumping to frame rate.
-            if (Input.GetButtonDown("Jump"))
+            if (input.JumpDown)
             {
                 jumpRequested = true;
             }
