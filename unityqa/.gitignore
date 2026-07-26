@@ -1,0 +1,44 @@
+# ---------------------------------------------------------------------------
+# Unity .gitignore — applies to the Unity project under UnityQA/
+# Rule: generated state is never committed; Library/ is the classic 10GB trap.
+# ---------------------------------------------------------------------------
+UnityQA/[Ll]ibrary/
+UnityQA/[Tt]emp/
+UnityQA/[Oo]bj/
+UnityQA/[Bb]uild/
+UnityQA/[Bb]uilds/
+UnityQA/[Ll]ogs/
+UnityQA/[Uu]ser[Ss]ettings/
+UnityQA/[Mm]emoryCaptures/
+UnityQA/[Rr]ecordings/
+
+# Never ignore packages/settings — they ARE the project definition
+!UnityQA/[Pp]ackages/
+!UnityQA/[Pp]roject[Ss]ettings/
+
+# Asset store & plugin cruft
+UnityQA/[Aa]ssets/AssetStoreTools*
+UnityQA/[Aa]ssets/Plugins/Editor/JetBrains*
+
+# IDE / OS
+.vs/
+.idea/
+.vscode/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.DS_Store
+Thumbs.db
+
+# Crash reports
+sysinfo.txt
+crashlytics-build.properties

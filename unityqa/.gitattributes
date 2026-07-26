@@ -1,0 +1,46 @@
+# ---------------------------------------------------------------------------
+# Git LFS rules — binaries go to LFS, text stays in git (SRS §5 Git workflow).
+# Installed BEFORE the first binary commit; retrofitting LFS is painful.
+# Unity scene/prefab/asset files are TEXT (Force Text serialization) and are
+# deliberately NOT in LFS so their diffs stay reviewable.
+# ---------------------------------------------------------------------------
+
+# Images
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.gif filter=lfs diff=lfs merge=lfs -text
+*.psd filter=lfs diff=lfs merge=lfs -text
+*.tga filter=lfs diff=lfs merge=lfs -text
+*.tif filter=lfs diff=lfs merge=lfs -text
+*.exr filter=lfs diff=lfs merge=lfs -text
+
+# Audio / video
+*.mp3 filter=lfs diff=lfs merge=lfs -text
+*.wav filter=lfs diff=lfs merge=lfs -text
+*.ogg filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.mov filter=lfs diff=lfs merge=lfs -text
+
+# 3D / fonts / archives / native
+*.fbx filter=lfs diff=lfs merge=lfs -text
+*.obj filter=lfs diff=lfs merge=lfs -text
+*.blend filter=lfs diff=lfs merge=lfs -text
+*.ttf filter=lfs diff=lfs merge=lfs -text
+*.otf filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.7z filter=lfs diff=lfs merge=lfs -text
+*.dll filter=lfs diff=lfs merge=lfs -text
+*.so filter=lfs diff=lfs merge=lfs -text
+*.dylib filter=lfs diff=lfs merge=lfs -text
+
+# Unity text assets — force LF-friendly text handling, keep diffable
+*.unity text
+*.prefab text
+*.asset text
+*.meta text
+*.mat text
+*.anim text
+*.controller text
+*.asmdef text
+*.cs text
