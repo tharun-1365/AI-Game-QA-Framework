@@ -1,0 +1,17 @@
+{
+    "name": "UnityQA.Adapters",
+    "rootNamespace": "UnityQA.Adapters",
+    "references": [
+        "UnityQA",
+        "BenchGame"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

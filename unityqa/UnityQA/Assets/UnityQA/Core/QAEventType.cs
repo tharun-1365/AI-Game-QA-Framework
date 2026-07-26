@@ -40,6 +40,16 @@ namespace UnityQA.Core
         TriggerFired = 23,
         ExpectedTriggersSummary = 24,
 
+        // --- Continuous telemetry (M2 Slice C, D-010) ---
+        // Periodic gameplay sample riding the events stream. Appended per this
+        // enum's contract: new number, nothing renumbered.
+        PlayerSample = 30,
+
+        // --- Attempted input (M2 Slice D) ---
+        // What the player commanded (change-triggered + keyframes). Appended
+        // per this enum's contract: new number, nothing renumbered.
+        InputSample = 31,
+
         // --- Framework diagnostics (M1.2) ---
         AdapterWarning = 90,
     }
