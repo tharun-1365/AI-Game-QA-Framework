@@ -43,6 +43,13 @@ namespace UnityQA.Core
         [Tooltip("Unconditional input keyframe every N fixed steps (design §8). 250 = 5 s at 50 Hz.")]
         public int inputKeyframeEverySteps = 250;
 
+        [Header("Replay validation — used from M3 Slice C")]
+        [Tooltip("Max tolerated position deviation (world units) between an original run and its replay before the verdict is FAIL. Tile size = 1 unit for scale.")]
+        public float validationDeviationThreshold = 0.75f;
+
+        [Tooltip("Safety margin (seconds) added to the original session's duration when waiting for a validation playback to finish.")]
+        public float validationTimeoutMargin = 5f;
+
         [Header("File I/O — used from Slice B")]
         [Tooltip("Flush events.jsonl every N lines (crash-safety vs throughput, design §11).")]
         public int flushEveryNEvents = 25;
