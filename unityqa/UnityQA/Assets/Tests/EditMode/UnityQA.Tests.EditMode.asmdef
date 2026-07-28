@@ -2,10 +2,11 @@
     "name": "UnityQA.Tests.EditMode",
     "rootNamespace": "UnityQA.Tests",
     "references": [
-        "UnityQA",
-        "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner"
-    ],
+    "UnityQA",
+    "UnityQA.Adapters",
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
+],
     "includePlatforms": [
         "Editor"
     ],

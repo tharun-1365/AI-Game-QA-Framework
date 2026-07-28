@@ -99,6 +99,24 @@ namespace BenchGame
         /// <summary>The active input source (read-only observation surface).</summary>
         public IPlayerInputSource InputSource => input;
 
+        /// <summary>
+        /// Swap the active input source at runtime (M3.B, additive).
+        /// GENERIC dependency injection, not replay code: any game with a
+        /// D-008-style seam offers this for demos, replay, or AI drivers —
+        /// the controller neither knows nor cares who is issuing commands,
+        /// which is the entire point of the seam. Null is rejected (the
+        /// controller must always have SOME source).
+        /// </summary>
+        public void SetInputSource(IPlayerInputSource source)
+        {
+            if (source == null)
+            {
+                Debug.LogWarning("[BenchGame] SetInputSource(null) ignored — keeping current source.");
+                return;
+            }
+            input = source;
+        }
+
         private void Awake()
         {
             body = GetComponent<Rigidbody2D>();
