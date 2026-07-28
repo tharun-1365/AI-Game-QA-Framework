@@ -117,6 +117,18 @@ namespace UnityQA.Adapters
             return recording != null;
         }
 
+        /// <summary>
+        /// Point this player at a specific replay file (M3.C, additive).
+        /// Invalidates any cached recording so the next Play()/LoadReplay()
+        /// reads the new target. Exists so orchestration code (ReplayValidator)
+        /// can drive playback without touching serialized inspector state.
+        /// </summary>
+        public void SetReplayFile(string path)
+        {
+            replayFile = path ?? "";
+            recording = null;
+        }
+
         private void Update()
         {
             if (!playing) return;
