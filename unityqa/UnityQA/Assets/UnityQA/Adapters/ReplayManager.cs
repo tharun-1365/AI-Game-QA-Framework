@@ -194,6 +194,31 @@ namespace UnityQA.Adapters
         [ContextMenu("Build Feature Dataset (All Sessions)")]
         public void BuildFeatureDatasetMenu() => BuildFeatureDataset(false);
 
+        /// <summary>M5.A: descriptive analysis of the dataset → analysis.json.
+        /// Loads dataset.json (building it first if absent — orchestration
+        /// courtesy, logged); edit-mode safe (pure file I/O). Facts only —
+        /// no classification happens anywhere below this call.</summary>
+        [ContextMenu("Analyze Dataset")]
+        public void AnalyzeDataset()
+        {
+            Features.FeatureDataset dataset =
+                Features.FeatureDatasetStore.LoadJson(QALogger.SessionsRoot);
+            if (dataset == null)
+            {
+                Debug.Log("[UnityQA] No dataset.json found — building the dataset first.");
+                dataset = BuildFeatureDataset(false);
+                if (dataset == null) return;
+            }
+
+            Analysis.DatasetAnalysis analysis = Analysis.AnalysisEngine.Analyze(dataset);
+            string path = Analysis.AnalysisStore.Save(analysis, QALogger.SessionsRoot);
+
+            Debug.Log($"[UnityQA] Analysis complete — {analysis.sessions.Count} session(s), " +
+                      $"{analysis.rankings.Count} feature rankings, " +
+                      $"{analysis.outlierCandidates.Count} numeric outlier candidate(s) " +
+                      $"(|z| ≥ {Analysis.AnalysisEngine.OutlierZThreshold}) → {path}");
+        }
+
         [ContextMenu("Extract Features (Newest Session)")]
         public void ExtractFeaturesNewest()
         {
