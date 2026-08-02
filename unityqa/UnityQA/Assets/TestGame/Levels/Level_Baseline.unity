@@ -460,6 +460,8 @@ GameObject:
   - component: {fileID: 1378314633}
   - component: {fileID: 1378314635}
   - component: {fileID: 1378314636}
+  - component: {fileID: 1378314638}
+  - component: {fileID: 1378314637}
   m_Layer: 0
   m_Name: '[QA]'
   m_TagString: Untagged
@@ -555,6 +557,34 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 95a1fbc6b838b034e9647a56830a1bd5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: UnityQA.Adapters::UnityQA.Adapters.ReplayRecorder
+--- !u!114 &1378314637
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1378314629}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dc5f52069df2dc84b830277797f80279, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityQA.Adapters::UnityQA.Adapters.ReplayValidator
+  originalSessionFolder: 
+--- !u!114 &1378314638
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1378314629}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fa1cfdb7d160f6c4090784caca550754, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityQA.Adapters::UnityQA.Adapters.ReplayPlayer
+  replayFile: 
+  autoPlay: 0
+  loop: 0
 --- !u!1 &1642333793
 GameObject:
   m_ObjectHideFlags: 0
