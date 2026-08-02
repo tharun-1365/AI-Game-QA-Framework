@@ -150,6 +150,7 @@ namespace UnityQA.Adapters
             else Debug.LogWarning("[UnityQA] No session with a replay found.");
         }
 
+
         // ------------------------------------------------------ features (M4.A)
 
         /// <summary>Extract and persist features.json for a cataloged session.
@@ -183,7 +184,7 @@ namespace UnityQA.Adapters
             else Debug.LogWarning("[UnityQA] No sessions cataloged.");
         }
 
-        // ------------------------------------------------------------- helpers
+
 
         private ReplayMetadata FindEntry(string sessionId)
         {
