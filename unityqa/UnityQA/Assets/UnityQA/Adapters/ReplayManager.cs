@@ -150,7 +150,41 @@ namespace UnityQA.Adapters
             else Debug.LogWarning("[UnityQA] No session with a replay found.");
         }
 
-        // ------------------------------------------------------------- helpers
+
+        // ------------------------------------------------------ features (M4.A)
+
+        /// <summary>Extract and persist features.json for a cataloged session.
+        /// Edit-mode safe (pure file I/O, like the catalog). Returns the
+        /// features, or null on failure.</summary>
+        public Features.SessionFeatures ExtractFeaturesBySessionId(string sessionId)
+        {
+            ReplayMetadata entry = FindEntry(sessionId);
+            if (entry == null)
+            {
+                Debug.LogError($"[UnityQA] No cataloged session '{sessionId}' — refresh the catalog?");
+                return null;
+            }
+
+            Features.SessionFeatures f = Features.FeatureExtractor.Extract(entry.folderPath);
+            if (f == null) return null;
+
+            string path = Features.FeatureStore.Save(f, entry.folderPath);
+            Debug.Log($"[UnityQA] Features extracted — dist {f.totalDistance:F1}u, " +
+                      $"avg {f.averageSpeed:F2}u/s, max {f.maxSpeed:F2}u/s, jumps {f.jumpCount}, " +
+                      $"air {f.airtimeFraction:P0}, idle {f.idleFraction:P0}, " +
+                      $"dirChanges {f.directionChanges} → {path}");
+            return f;
+        }
+
+        [ContextMenu("Extract Features (Newest Session)")]
+        public void ExtractFeaturesNewest()
+        {
+            if (catalog == null || catalog.entries.Count == 0) RefreshCatalog();
+            if (catalog.entries.Count > 0) ExtractFeaturesBySessionId(catalog.entries[0].sessionId);
+            else Debug.LogWarning("[UnityQA] No sessions cataloged.");
+        }
+
+
 
         private ReplayMetadata FindEntry(string sessionId)
         {

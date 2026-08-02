@@ -25,12 +25,22 @@ using UnityEngine;
 
 namespace UnityQA.Replay
 {
-    /// <summary>One trajectory point: session time + player position.</summary>
+    /// <summary>One trajectory point: session time + player position, plus the
+    /// recorded kinematics (M4.A additive extension: vx/vy/g are captured when
+    /// present in the PlayerSample payload; absent fields stay 0/false-like,
+    /// so pre-M2.C logs and hand-built test samples remain valid).</summary>
     public struct TrajectorySample
     {
         public float t;
         public float x;
         public float y;
+
+        // --- M4.A additive fields (feature extraction consumes these) --------
+        /// <summary>Recorded velocity at the sample (payload vx/vy).</summary>
+        public float vx;
+        public float vy;
+        /// <summary>Grounded flag at the sample (payload g): 1 grounded, 0 airborne.</summary>
+        public int g;
     }
 
     /// <summary>A session's movement trajectory, loaded from its events.jsonl.</summary>
@@ -76,7 +86,17 @@ namespace UnityQA.Replay
                     TryExtractFloat(line, "\"x\":", out float x) &&
                     TryExtractFloat(line, "\"y\":", out float y))
                 {
-                    trajectory.Samples.Add(new TrajectorySample { t = t, x = x, y = y });
+                    // Kinematics are OPTIONAL (M4.A): quoted anchors again —
+                    // "vx"/"vy"/"g" are payload keys with no envelope collisions
+                    // ("g" appears nowhere else in a PlayerSample line). A miss
+                    // defaults to 0 / grounded so older logs still load.
+                    TryExtractFloat(line, "\"vx\":", out float vx);
+                    TryExtractFloat(line, "\"vy\":", out float vy);
+                    int g = 1;
+                    if (TryExtractFloat(line, "\"g\":", out float gRaw)) g = (int)gRaw;
+
+                    trajectory.Samples.Add(new TrajectorySample
+                    { t = t, x = x, y = y, vx = vx, vy = vy, g = g });
                 }
                 else
                 {
