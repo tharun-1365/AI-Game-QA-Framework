@@ -47,6 +47,7 @@ namespace UnityQA.Adapters
     /// GameObject next to QARunner (see docs/QA-SETUP.md step 7).
     /// </summary>
     [RequireComponent(typeof(QARunner))]
+    [RequireComponent(typeof(QALogger))]
     public sealed class ReplayRecorder : MonoBehaviour
     {
         /// <summary>Safety cap: 30 min at 60 fps. A session that long has
