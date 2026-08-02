@@ -150,7 +150,6 @@ namespace UnityQA.Adapters
             else Debug.LogWarning("[UnityQA] No session with a replay found.");
         }
 
-
         // ------------------------------------------------------ features (M4.A)
 
         /// <summary>Extract and persist features.json for a cataloged session.
@@ -176,6 +175,25 @@ namespace UnityQA.Adapters
             return f;
         }
 
+        /// <summary>M4.B: build the cross-session dataset (dataset.json +
+        /// features.csv at the Sessions root). Edit-mode safe (pure file I/O).
+        /// Returns the dataset, or null only on catastrophic failure.</summary>
+        public Features.FeatureDataset BuildFeatureDataset(bool forceReextract = false)
+        {
+            Features.FeatureDataset ds =
+                Features.FeatureDatasetBuilder.Build(QALogger.SessionsRoot, forceReextract);
+            string jsonPath = Features.FeatureDatasetStore.SaveJson(ds, QALogger.SessionsRoot);
+            Features.FeatureDatasetStore.SaveCsv(ds, QALogger.SessionsRoot);
+
+            Debug.Log($"[UnityQA] Dataset built — {ds.sessionCount} rows, " +
+                      $"{ds.skippedSessions} skipped, {ds.statistics.Count} feature statistics " +
+                      $"→ {jsonPath} (+ {Features.FeatureDatasetStore.CsvFileName})");
+            return ds;
+        }
+
+        [ContextMenu("Build Feature Dataset (All Sessions)")]
+        public void BuildFeatureDatasetMenu() => BuildFeatureDataset(false);
+
         [ContextMenu("Extract Features (Newest Session)")]
         public void ExtractFeaturesNewest()
         {
@@ -184,7 +202,7 @@ namespace UnityQA.Adapters
             else Debug.LogWarning("[UnityQA] No sessions cataloged.");
         }
 
-
+        // ------------------------------------------------------------- helpers
 
         private ReplayMetadata FindEntry(string sessionId)
         {
