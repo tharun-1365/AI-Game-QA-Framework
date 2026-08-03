@@ -227,6 +227,52 @@ namespace UnityQA.Adapters
             else Debug.LogWarning("[UnityQA] No sessions cataloged.");
         }
 
+        // ------------------------------------------------------- oracles (M5.B)
+
+        private Oracles.OracleRegistry oracleRegistry;
+
+        /// <summary>The oracle registry. Empty in M5.B by design — concrete
+        /// oracles register here in the next slice (explicit registration,
+        /// no reflection). Public so tests and future setup code can register.</summary>
+        public Oracles.OracleRegistry OracleRegistry =>
+            oracleRegistry ?? (oracleRegistry = new Oracles.OracleRegistry());
+
+        /// <summary>M5.B workflow: analysis.json (chain-building it and the
+        /// dataset first if absent) → contexts → runner → oracle-results.json.
+        /// Root-parameterized so tests run against a temp root; edit-mode
+        /// safe (pure file I/O). Valid empty result with zero oracles.</summary>
+        public Oracles.OracleRunResults RunQualityOracles(string sessionsRoot)
+        {
+            Features.FeatureDataset dataset = Features.FeatureDatasetStore.LoadJson(sessionsRoot);
+            if (dataset == null)
+            {
+                Debug.Log("[UnityQA] No dataset.json — building dataset first.");
+                dataset = Features.FeatureDatasetBuilder.Build(sessionsRoot, false);
+                Features.FeatureDatasetStore.SaveJson(dataset, sessionsRoot);
+            }
+
+            Analysis.DatasetAnalysis analysis = Analysis.AnalysisStore.Load(sessionsRoot);
+            if (analysis == null)
+            {
+                Debug.Log("[UnityQA] No analysis.json — analyzing dataset first.");
+                analysis = Analysis.AnalysisEngine.Analyze(dataset);
+                Analysis.AnalysisStore.Save(analysis, sessionsRoot);
+            }
+
+            var contexts = Oracles.OracleContextFactory.BuildContexts(sessionsRoot, dataset, analysis);
+            Oracles.OracleRunResults results = Oracles.OracleRunner.Run(OracleRegistry, contexts);
+            string path = Oracles.OracleResultStore.Save(results, sessionsRoot);
+
+            Debug.Log($"[UnityQA] Oracle run — {results.enabledOracleCount}/{results.oracleCount} " +
+                      $"oracle(s) over {results.sessionCount} session(s): " +
+                      $"{results.passedCount} passed, {results.failedCount} failed, " +
+                      $"{results.skippedCount} skipped, {results.errorCount} oracle error(s) → {path}");
+            return results;
+        }
+
+        [ContextMenu("Run Quality Oracles")]
+        public void RunQualityOraclesMenu() => RunQualityOracles(QALogger.SessionsRoot);
+
         // ------------------------------------------------------------- helpers
 
         private ReplayMetadata FindEntry(string sessionId)
