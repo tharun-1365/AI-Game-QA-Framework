@@ -2,7 +2,9 @@
     "name": "BenchGame.Editor",
     "rootNamespace": "BenchGame.EditorTools",
     "references": [
-        "BenchGame"
+        "BenchGame",
+        "UnityQA",
+        "UnityQA.Adapters"
     ],
     "includePlatforms": [
         "Editor"

@@ -36,10 +36,11 @@ namespace UnityQA.Adapters
     /// IGameAdapter for BenchGame. Scene setup: on the "[QA]" GameObject,
     /// alongside QARunner / QALogger / QATelemetrySampler.
     /// </summary>
-    public sealed class BenchGameAdapter : MonoBehaviour, IGameAdapter, IGutSpecSource, IPlayerInputObserver
+    public sealed class BenchGameAdapter : MonoBehaviour, IGameAdapter, IGutSpecSource, IPlayerInputObserver, IRunOutcomeSource
     {
         private PlayerController2D controller;
         private Rigidbody2D controllerBody;
+        private GameRun gameRun; // optional (M5.C): null in scenes without a run controller
 
         private bool prevGrounded;
         private float lastAirborneVy;
@@ -69,6 +70,35 @@ namespace UnityQA.Adapters
 
             controllerBody = controller.GetComponent<Rigidbody2D>();
             prevGrounded = controller.IsGrounded;
+
+            // M5.C: observe the run controller when the scene has one.
+            // Level_Baseline has none — everything else works unchanged.
+            gameRun = FindFirstObjectByType<GameRun>();
+            if (gameRun != null)
+                gameRun.RunEnded += OnGameRunEnded;
+        }
+
+        /// <summary>IRunOutcomeSource (M5.C): the game's outcome enum mapped to
+        /// the neutral shape core UnityQA consumes — the adapter is the only
+        /// place BenchGame.SessionOutcome names are known.</summary>
+        public event Action<RunOutcomeInfo> RunEndedDetected;
+
+        private void OnGameRunEnded(SessionOutcome outcome)
+        {
+            RunEndedDetected?.Invoke(new RunOutcomeInfo
+            {
+                outcome = outcome.ToString(),
+                isDeath = outcome == SessionOutcome.SpikeDeath || outcome == SessionOutcome.OutOfBounds,
+                cause = outcome == SessionOutcome.SpikeDeath ? "spike"
+                      : outcome == SessionOutcome.OutOfBounds ? "outOfBounds" : "",
+                isSuccess = outcome == SessionOutcome.Success
+            });
+        }
+
+        private void OnDestroy()
+        {
+            if (gameRun != null)
+                gameRun.RunEnded -= OnGameRunEnded;
         }
 
         private void FixedUpdate()
