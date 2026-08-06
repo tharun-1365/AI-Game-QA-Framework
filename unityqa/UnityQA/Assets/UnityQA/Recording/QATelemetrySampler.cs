@@ -53,6 +53,7 @@ namespace UnityQA.Core
 
         private QARunner runner;
         private IGameAdapter adapter;
+        private IRunOutcomeSource outcomeSource; // optional (M5.C) — null in outcome-less scenes
         private Coroutine loop;
         private WaitForSeconds interval;
         private readonly Dictionary<string, object> payload = new Dictionary<string, object>(8);
@@ -90,6 +91,12 @@ namespace UnityQA.Core
 
             adapter.JumpDetected += OnJump;
             adapter.LandedDetected += OnLanded;
+
+            // M5.C: relay run outcomes when the adapter provides them (same
+            // optional-interface pattern as IGutSpecSource — old scenes: null).
+            if (outcomeSource == null) outcomeSource = GetComponent<IRunOutcomeSource>();
+            if (outcomeSource != null) outcomeSource.RunEndedDetected += OnRunEnded;
+
             loop = StartCoroutine(SampleLoop());
         }
 
@@ -101,6 +108,31 @@ namespace UnityQA.Core
                 adapter.JumpDetected -= OnJump;
                 adapter.LandedDetected -= OnLanded;
             }
+            if (outcomeSource != null) outcomeSource.RunEndedDetected -= OnRunEnded;
+        }
+
+        /// <summary>M5.C: one run end → up to three events, in a fixed order:
+        /// PlayerDied (death outcomes — lights up the reserved type 21 and the
+        /// existing deaths feature, zero extraction changes), TriggerFired
+        /// (Success — exit door, type 23), then always RunEnded (type 25) as
+        /// the single canonical outcome record.</summary>
+        private void OnRunEnded(RunOutcomeInfo info)
+        {
+            if (info.isDeath)
+            {
+                payload.Clear();
+                payload["cause"] = info.cause;
+                runner.Emit(QAEventType.PlayerDied, adapter.PlayerPosition, payload);
+            }
+            if (info.isSuccess)
+            {
+                payload.Clear();
+                payload["triggerId"] = "exit.door";
+                runner.Emit(QAEventType.TriggerFired, adapter.PlayerPosition, payload);
+            }
+            payload.Clear();
+            payload["outcome"] = info.outcome;
+            runner.Emit(QAEventType.RunEnded, adapter.PlayerPosition, payload);
         }
 
         private IEnumerator SampleLoop()

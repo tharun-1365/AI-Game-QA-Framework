@@ -33,12 +33,17 @@ namespace UnityQA.Core
         CollisionEnter = 13,
         CollisionExit = 14,
 
-        // --- Reserved for Milestone 3 (BenchGame completion) ---
+        // --- Reserved for BenchGame completion (PlayerDied and TriggerFired
+        //     went LIVE in M5 Slice C — BenchGame v2 deaths and exit door) ---
         PlayerSpawned = 20,
         PlayerDied = 21,
         TokenCollected = 22,
         TriggerFired = 23,
         ExpectedTriggersSummary = 24,
+
+        // --- Benchmark run lifecycle (M5 Slice C) ---
+        // Exactly one per observed run: how it ended (payload: outcome).
+        RunEnded = 25,
 
         // --- Continuous telemetry (M2 Slice C, D-010) ---
         // Periodic gameplay sample riding the events stream. Appended per this
