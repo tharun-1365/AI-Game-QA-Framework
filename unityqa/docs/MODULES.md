@@ -416,6 +416,41 @@ overload keeps the everything-under-one-root convention. One-time
 move; regenerable cross-session artifacts are rebuilt, not migrated).
 QAData/ is gitignored. 4 new EditMode tests pin the layout.
 
+**M6.A — Planted-bug regression benchmark (log entry).** The answer key goes
+live: `Level_PlantedBugs_A` = Level_Benchmark's exact geometry and [QA] stack
+plus four documented defects, built entirely by the new
+`PlantedBugLevelBuilder` (sibling of BenchmarkLevelBuilder, NOT a shared
+parameterized core — same reasoning that already keeps the baseline and
+benchmark builders separate: under D-006 the builder IS the level's source,
+so this file diffed against the clean builder is the complete reviewable
+list of plants). The plants — PB-001 collider gap (platform 4's take-off
+cell x27 moves to a render-only tilemap: looks solid, isn't), PB-002 soft
+lock (sealed basin under gap 1: depth 3 u > jump 2.2 u, floor above killY —
+alive, stuck, no outcome forever), PB-003 hazard on the golden path (third
+spike mid-platform-3: a clean golden run replayed here flips Success →
+SpikeDeath), PB-004 missing trigger (ExitDoor visually intact, trigger
+collider disabled — the SRS §13 BUG-004 method verbatim). Every plant is
+static geometry — determinism (FR-1.19) untouched; every plant is reachable
+by ordinary play AND bypassable (kinematics-checked: the PB-001 bypass jump
+reaches the exit platform with ≈1.8 u margin), so one session can target any
+chosen bug. Ground truth is machine-checkable: EditorOnly `PB_00x` markers
+at each site (SRS §13 rule 5 — stripped from builds, no runtime reads), and
+BENCHMARK.md is rewritten as the ACTIVE answer key with a hard rule the
+paper depends on: ground truth ("bug exists", status *planted*) is never
+conflated with detection ("framework found it", column *pending* until an
+M6-C evaluation run). Strictly ground-truth slice: no oracle added, no
+schema change, no replay change. Tests: EditMode `PlantedBugLevelTests`
+builds the real scene via the real builder and pins every plant (plus: the
+clean benchmark's bytes are untouched by building the planted level);
+PlayMode `PlantedBugConditionTests` proves each CLASS observable in the
+existing event vocabulary — collider gap → OutOfBounds, basin → alive +
+inescapable (300 fixed-step escape attempts peak below the rim) + zero
+RunEnded, spike-on-path → same scripted input flips Success → SpikeDeath,
+dead trigger → door reached and passed with zero TriggerFired/RunEnded.
+Contract note (M3.B lesson): `UnityQA.Tests.EditMode.asmdef` gains
+`BenchGame` + `BenchGame.Editor` references — the ground-truth tests consume
+the builder and BenchGame types.
+
 **A1/A2 — Schema amendments at M2 approval.** Per-stream header line carrying
 `schemaVersion` + `sessionId`; canonical session ID becomes a UUID; folder
 names stay human-sortable. Frozen into EVENT-SCHEMA.md v1.

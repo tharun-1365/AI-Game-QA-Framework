@@ -4,6 +4,8 @@
     "references": [
         "UnityQA",
         "UnityQA.Adapters",
+        "BenchGame",
+        "BenchGame.Editor",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
