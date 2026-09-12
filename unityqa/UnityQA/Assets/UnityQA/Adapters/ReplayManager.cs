@@ -231,9 +231,11 @@ namespace UnityQA.Adapters
 
         private Oracles.OracleRegistry oracleRegistry;
 
-        /// <summary>The oracle registry, populated with the M5.D core oracles
-        /// on first access (explicit registration — no reflection; the active
-        /// rule set is these three lines, reviewable in a diff).</summary>
+        /// <summary>The oracle registry, populated with the concrete oracles on
+        /// first access (explicit registration — no reflection; the active rule
+        /// set is these lines, reviewable in a diff). M5.D shipped the first
+        /// three; M6.B adds the two planted-defect detectors (SoftLock,
+        /// MissingTrigger). Registration order = execution order.</summary>
         public Oracles.OracleRegistry OracleRegistry
         {
             get
@@ -244,6 +246,8 @@ namespace UnityQA.Adapters
                     oracleRegistry.Register(new Oracles.ReplayConsistencyOracle());
                     oracleRegistry.Register(new Oracles.CompletionOracle());
                     oracleRegistry.Register(new Oracles.HazardOracle());
+                    oracleRegistry.Register(new Oracles.SoftLockOracle());       // M6.B
+                    oracleRegistry.Register(new Oracles.MissingTriggerOracle()); // M6.B
                 }
                 return oracleRegistry;
             }

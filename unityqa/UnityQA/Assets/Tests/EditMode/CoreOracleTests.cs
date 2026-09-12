@@ -154,18 +154,22 @@ namespace UnityQA.Tests
         // -------------------------------------------- registry & runner wiring
 
         [Test]
-        public void ReplayManager_RegistersExactlyTheThreeCoreOracles()
+        public void ReplayManager_RegistersExactlyTheFiveOracles()
         {
             var go = new GameObject("[QA-RegTest]");
             try
             {
                 var manager = go.AddComponent<ReplayManager>();
                 OracleRegistry reg = manager.OracleRegistry;
-                Assert.AreEqual(3, reg.Count, "exactly three core oracles, no placeholders");
+                // Exact registry, no placeholders: the M5.D core three plus the
+                // two M6.B planted-defect detectors, in registration order.
+                Assert.AreEqual(5, reg.Count, "exactly five oracles, no placeholders");
                 Assert.AreEqual("ReplayConsistency", reg.Oracles[0].Name);
                 Assert.AreEqual("Completion", reg.Oracles[1].Name);
                 Assert.AreEqual("Hazard", reg.Oracles[2].Name);
-                Assert.AreEqual(3, reg.EnabledCount);
+                Assert.AreEqual("SoftLock", reg.Oracles[3].Name);
+                Assert.AreEqual("MissingTrigger", reg.Oracles[4].Name);
+                Assert.AreEqual(5, reg.EnabledCount);
                 Assert.AreSame(reg, manager.OracleRegistry, "registry is created once");
             }
             finally { UnityEngine.Object.DestroyImmediate(go); }

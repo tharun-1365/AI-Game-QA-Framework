@@ -47,6 +47,33 @@ namespace UnityQA.Oracles
         /// before BenchGame v2 (or with telemetry off) — outcome-consuming
         /// oracles SKIP those rather than judging blind.</summary>
         public string RunOutcome;
+
+        /// <summary>M6.B: a compact spatial summary of the session's movement,
+        /// derived by the factory from the SAME PlayerSample telemetry the
+        /// trajectory/features already consume (no new event or file field —
+        /// this is analysis of existing evidence, computed once at the I/O
+        /// point so Evaluate stays pure). Null when the session has no usable
+        /// trajectory; SoftLockOracle needs it to tell "confined" (a small
+        /// region) from "traversed" (a large one), which the scalar features
+        /// alone cannot express. `available` is false for a present-but-empty
+        /// trajectory.</summary>
+        public TrajectorySummary Trajectory;
+    }
+
+    /// <summary>Bounding-box + duration summary of a session's PlayerSample
+    /// trajectory (M6.B). Spatial EXTENT distinguishes a soft lock (large path
+    /// length inside a tiny region) from ordinary play (path length ≈ extent);
+    /// the scalar SessionFeatures carry path length but no extent.</summary>
+    public sealed class TrajectorySummary
+    {
+        public bool available;
+        public int sampleCount;
+        public float minX, maxX, minY, maxY;
+        public float firstT, lastT;
+
+        public float SpanX => maxX - minX;
+        public float SpanY => maxY - minY;
+        public float DurationSec => lastT - firstT;
     }
 
     /// <summary>Deterministic context assembly from the existing artifacts.</summary>
@@ -91,11 +118,50 @@ namespace UnityQA.Oracles
                     catch (System.Exception) { /* damaged file → null, oracle decides */ }
                 }
 
-                ctx.RunOutcome = ReadLastRunOutcome(Path.Combine(ctx.SessionFolder, "events.jsonl"));
+                string eventsPath = Path.Combine(ctx.SessionFolder, "events.jsonl");
+                ctx.RunOutcome = ReadLastRunOutcome(eventsPath);
+                ctx.Trajectory = SummarizeTrajectory(eventsPath);
 
                 contexts.Add(ctx);
             }
             return contexts;
+        }
+
+        /// <summary>
+        /// M6.B: bounding-box + duration of the session's PlayerSample
+        /// trajectory, read through the SAME SessionTrajectory loader the
+        /// feature extractor and validator use (no second parser). Returns
+        /// null when there is no events.jsonl to read; an `available == false`
+        /// summary when the file has no samples. This is the factory's one
+        /// place to do trajectory I/O — oracles receive the finished summary.
+        /// </summary>
+        private static TrajectorySummary SummarizeTrajectory(string eventsJsonlPath)
+        {
+            if (string.IsNullOrEmpty(eventsJsonlPath) || !File.Exists(eventsJsonlPath)) return null;
+
+            SessionTrajectory traj = SessionTrajectory.Load(eventsJsonlPath);
+            if (traj == null || traj.Samples.Count == 0)
+                return new TrajectorySummary { available = false, sampleCount = traj?.Samples.Count ?? 0 };
+
+            var s = new TrajectorySummary
+            {
+                available = true,
+                sampleCount = traj.Samples.Count,
+                minX = traj.Samples[0].x,
+                maxX = traj.Samples[0].x,
+                minY = traj.Samples[0].y,
+                maxY = traj.Samples[0].y,
+                firstT = traj.Samples[0].t,
+                lastT = traj.Samples[traj.Samples.Count - 1].t
+            };
+            foreach (TrajectorySample p in traj.Samples)
+            {
+                if (p.x < s.minX) s.minX = p.x;
+                if (p.x > s.maxX) s.maxX = p.x;
+                if (p.y < s.minY) s.minY = p.y;
+                if (p.y > s.maxY) s.maxY = p.y;
+            }
+            return s;
         }
 
         /// <summary>

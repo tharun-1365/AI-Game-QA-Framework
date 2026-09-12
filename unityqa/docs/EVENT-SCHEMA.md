@@ -247,9 +247,11 @@ the four-way outcome accounting: executedEvaluations (verdicts),
 passedCount/failedCount, skippedCount (oracle returned not-applicable),
 errorCount (oracle THREW — recorded as severity "warning" with reason prefix
 "oracle-error:", isolated, never conflated with a game failing a rule).
-M5.D populates the registry with the three core oracles — ReplayConsistency
+M5.D populates the registry with three core oracles — ReplayConsistency
 (warning on FAIL), Completion (warning on FAIL), Hazard (warning on spike,
-CRITICAL on out-of-bounds; skips Quit). OracleContext additionally carries
+CRITICAL on out-of-bounds; skips Quit); M6.B adds two planted-defect
+detectors — SoftLock and MissingTrigger (both CRITICAL on FAIL) — for five
+registered in all. OracleContext additionally carries
 RunOutcome = the LAST RunEnded event's outcome in the session's events.jsonl
 (multi-run sessions: final state wins); sessions without one are skipped by
 outcome-consuming oracles.

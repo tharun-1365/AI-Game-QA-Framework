@@ -451,6 +451,54 @@ Contract note (M3.B lesson): `UnityQA.Tests.EditMode.asmdef` gains
 `BenchGame` + `BenchGame.Editor` references — the ground-truth tests consume
 the builder and BenchGame types.
 
+**M6.B — Detection oracles: SoftLock + MissingTrigger (log entry).** The two
+detectors the M6 plan named, both additive `IQualityOracle` implementations
+(no framework redesign; registered as two more explicit lines in
+`ReplayManager.OracleRegistry` — order-preserving, reviewable in a diff).
+Ground truth (M6-A: the defect exists) and detection (M6-B: an oracle found
+it) stay separate — nothing here edits the planted geometry, and BENCHMARK.md's
+*Detected* column stays `pending` until an M6-C run scores it.
+
+`SoftLockOracle` (PB-002 class) works from a general gameplay-state rule, no
+benchmark coordinates: a run is a soft lock when it recorded NO terminal
+outcome and the player is alive, YET kept trying to move (enough direction
+reversals or jump presses AND a real travelled-path length) while staying
+CONFINED — the whole trajectory fits a small bounding-box extent and the path
+is much longer than that extent (pacing inside a trap), sustained across an
+observation window. That combination separates the four spec cases: idle /
+"chose not to move" fails the activity test, normal traversal fails the
+confinement test, a terminated or dead run is not a soft lock (PASS), and too
+little trajectory → SKIP. FAIL is CRITICAL (unwinnable, player stranded).
+Evidence: path length / direction changes / jump presses from SessionFeatures,
+spatial EXTENT from a new `OracleContext.Trajectory` bounding-box summary the
+factory derives from the SAME PlayerSample telemetry (no new event/file/schema
+field — analysis of existing evidence at the one I/O point, so Evaluate stays
+pure). Extent is the one thing the scalar features could not express and the
+soft lock genuinely needs.
+
+`MissingTriggerOracle` (PB-004 class) attributes from gameplay evidence, never
+from a planted-bug ID. Honest evidence note recorded for the viva: the exit's
+location is observable ONLY through the TriggerFired event a broken exit fails
+to emit, and no expected-trigger / level-bounds instrumentation exists
+(`ExpectedTriggersSummary` is declared but never emitted), so a single direct
+play cannot self-prove "the player reached the exit." The reference that CAN
+is the replay-regression pair already in validation.json: an ORIGINAL run that
+reached and fired the exit (originalOutcome Success) plus a FAITHFUL replay
+(verdict PASS) of that route. Rule: this run ended Success → PASS; no such
+reference → SKIP; original+replay both Success → PASS; replay ended in a
+FAILURE (spike/out-of-bounds/quit) → SKIP (a hazard, not a trigger defect —
+this is the PB-003 discrimination, left to HazardOracle); original completed +
+faithful replay reproduced the route + no completion + no trigger fired →
+FAIL CRITICAL (exit reachable but silently non-functional). Direct-play
+(non-replay) missing-trigger detection is deferred behind the missing
+expected-exit observable, reported not invented.
+
+Tests: `Tests/EditMode/DetectionOracleTests.cs` — 12 EditMode cases over
+hand-built contexts (pure, no files) covering FAIL / PASS / idle / traversal /
+SKIP for SoftLock and PASS / FAIL / SKIP (incl. PB-003 discrimination) for
+MissingTrigger. Existing suites untouched; no replay/event/QAData schema
+change; M6-A geometry and M6-C both untouched.
+
 **A1/A2 — Schema amendments at M2 approval.** Per-stream header line carrying
 `schemaVersion` + `sessionId`; canonical session ID becomes a UUID; folder
 names stay human-sortable. Frozen into EVENT-SCHEMA.md v1.
