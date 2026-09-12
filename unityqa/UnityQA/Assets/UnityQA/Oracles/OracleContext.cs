@@ -40,6 +40,13 @@ namespace UnityQA.Oracles
         public DatasetAnalysis DatasetAnalysis;    // the whole analysis (shared reference)
         public ReplayMetadata Metadata;            // catalog entry (may be null)
         public ReplayValidationResult Validation;  // validation.json (null if never validated)
+
+        /// <summary>M5.D: the session's recorded benchmark outcome — the
+        /// payload of the LAST RunEnded event in events.jsonl ("Success",
+        /// "SpikeDeath", "OutOfBounds", "Quit"). Null for sessions recorded
+        /// before BenchGame v2 (or with telemetry off) — outcome-consuming
+        /// oracles SKIP those rather than judging blind.</summary>
+        public string RunOutcome;
     }
 
     /// <summary>Deterministic context assembly from the existing artifacts.</summary>
@@ -84,9 +91,37 @@ namespace UnityQA.Oracles
                     catch (System.Exception) { /* damaged file → null, oracle decides */ }
                 }
 
+                ctx.RunOutcome = ReadLastRunOutcome(Path.Combine(ctx.SessionFolder, "events.jsonl"));
+
                 contexts.Add(ctx);
             }
             return contexts;
+        }
+
+        /// <summary>
+        /// M5.D: the outcome of the session's LAST RunEnded event (a session
+        /// may span several runs via manual reset — the final state is the
+        /// session's outcome; policy documented in EVENT-SCHEMA §5f). Same
+        /// anchored parsing of our own writer's fixed format as
+        /// SessionTrajectory; null when the file or event is absent.
+        /// </summary>
+        public static string ReadLastRunOutcome(string eventsJsonlPath)
+        {
+            if (string.IsNullOrEmpty(eventsJsonlPath) || !File.Exists(eventsJsonlPath)) return null;
+
+            const string marker = "\"type\":\"RunEnded\"";
+            const string anchor = "\"outcome\":\"";
+            string outcome = null;
+            foreach (string line in File.ReadLines(eventsJsonlPath))
+            {
+                if (!line.Contains(marker)) continue;
+                int idx = line.IndexOf(anchor, System.StringComparison.Ordinal);
+                if (idx < 0) continue;
+                int start = idx + anchor.Length;
+                int end = line.IndexOf('"', start);
+                if (end > start) outcome = line.Substring(start, end - start); // last one wins
+            }
+            return outcome;
         }
     }
 }

@@ -23,7 +23,9 @@ namespace UnityQA.Replay
     [Serializable]
     public sealed class ReplayValidationResult
     {
-        public const int CurrentSchemaVersion = 1;
+        /// <summary>v2 (M5.D stabilization): adds the run-outcome comparison
+        /// fields below — additive only, v1 readers unaffected.</summary>
+        public const int CurrentSchemaVersion = 2;
         public const string VerdictPass = "PASS";
         public const string VerdictFail = "FAIL";
         public const string VerdictInvalid = "INVALID";
@@ -54,6 +56,20 @@ namespace UnityQA.Replay
         public float originalDuration;
         public float validationDuration;
         public float durationDelta;
+
+        // --- run-outcome comparison (v2, M5.D stabilization) -----------------
+        // A trajectory can stay under threshold while the RUN still ends
+        // differently (or vice versa on marginal geometry) — the recorded
+        // benchmark outcome is the second, discrete axis of fidelity.
+        /// <summary>Recorded outcome of the original session ("" if none recorded).</summary>
+        public string originalOutcome;
+        /// <summary>Recorded outcome of the validation session ("" if none recorded).</summary>
+        public string replayOutcome;
+        /// <summary>True when both outcomes were recorded and comparable
+        /// (a manual Quit is not — Escape is not part of the input seam).</summary>
+        public bool outcomesCompared;
+        /// <summary>True when outcomesCompared and the outcomes are equal.</summary>
+        public bool outcomeMatch;
 
         public string verdict;
     }

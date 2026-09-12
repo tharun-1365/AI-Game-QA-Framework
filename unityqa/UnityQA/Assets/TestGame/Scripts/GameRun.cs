@@ -105,6 +105,18 @@ namespace BenchGame
                 playerBody.linearVelocity = Vector2.zero;
             }
             player.enabled = true;
+
+            // HOTFIX-4: the controller's input latch is written only in
+            // Update, so disabling it at EndRun froze moveInput/jumpRequested
+            // at the dying player's last command. FixedUpdate runs before
+            // Update, so without this line the first physics step after a
+            // reset replays that command — the player slides off spawn, and
+            // if the run ended with a jump press latched it jumps immediately.
+            // Reset is supposed to be deterministic and identical every time
+            // (see this method's own contract); that only holds once input
+            // state is reset alongside position and velocity.
+            player.ResetInputState();
+
             State = RunState.Running;
             Debug.Log("[BenchGame] Run reset.");
         }

@@ -43,9 +43,11 @@ namespace UnityQA.Logging
         private string sessionFolder;
         private bool streamsOpen;
 
-        /// <summary>Root of all session folders (FR-1.9): persistentDataPath/UnityQA/Sessions.</summary>
-        public static string SessionsRoot =>
-            Path.Combine(Application.persistentDataPath, "UnityQA", "Sessions");
+        /// <summary>Root of all session folders (FR-1.9). Relocated by D-013 to
+        /// the project-local QAData tree — QAPaths owns the actual location;
+        /// this accessor stays because it is the name every consumer already
+        /// uses (recorder, player, validator, catalog, manager, tests).</summary>
+        public static string SessionsRoot => QAPaths.SessionsRoot;
 
         private IGutSpecSource gutSource; // optional sibling (Slice C): fills session.json gutSpec
 

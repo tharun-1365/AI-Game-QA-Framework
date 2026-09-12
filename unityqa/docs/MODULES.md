@@ -202,6 +202,220 @@ is M4's enumeration surface (datasets iterate entries) and M7's citation
 index (verdicts + evidence folder links). Milestone 3 is complete with this
 slice: record → save → load → play → compare → index.
 
+**HOTFIX-2 — session.json missing in ReplayRecorderTests (surfaced during
+M3.D validation; defect dates to M3.A).** Not a Slice D regression: the
+failing path (QARunner → QALogger → SessionManifest) is untouched since
+Slice C (verifiable by diff). Root cause: the M3.A PlayMode test rig asserts
+the two-file session-folder contract (session.json + replay.json) but
+instantiates only ONE of the two producers — QALogger, the sole writer of
+session.json, was never added to the [QA-ReplayTest] GameObject. Fix
+(production-side, test untouched): ReplayRecorder now declares
+[RequireComponent(typeof(QALogger))], encoding the real invariant — a replay
+belongs inside a fully-formed session folder — so any scene or rig that adds
+a recorder automatically gets the manifest system; a no-op wherever QALogger
+already exists. Side effect: ReplayPlaybackTests' rig also gains a QALogger
+and now writes real session files (its folders were already tracked and
+deleted in teardown). Lesson: a test that asserts a multi-component contract
+must instantiate every producer of that contract — rig completeness is part
+of test correctness.
+
+**M4.A — Feature extraction (log entry).** New `UnityQA.Features` namespace
+(Features/ folder, core assembly, no new asmdef): `SessionFeatures` (frozen
+formula contract in its header), `FeatureExtractor` (static, deterministic,
+file-based, never throws; every input optional with *Available flags — crash
+folders are first-class), `FeatureStore` (features.json, ReplayFileStore
+pattern). Two additive modifications, each necessary: `SessionTrajectory`
+now also captures vx/vy/g from PlayerSample payloads (positional features
+need recorded kinematics; defaults keep old logs and existing tests valid) —
+and `ReplayManager` gains ExtractFeaturesBySessionId + a context menu (the
+catalog is the natural enumeration surface; edit-mode safe like the rest of
+the file I/O). Input set is the brief's three files PLUS events.jsonl —
+distance/speed/airtime are positional facts and the session's positional
+record is its telemetry; replay.json holds inputs, not positions. Boundary
+honored: extraction only — no anomaly detection, scoring, clustering, or
+classification anywhere in the slice. 12 new EditMode tests against
+hand-computed ground truth generated with the real production writers.
+
+**M4.B — Feature dataset generation (log entry).** `FeatureDataset` (+
+availability-gated `FeatureStatistic`s), `FeatureDatasetBuilder`
+(catalog-driven — reuses ReplayCatalog, no second folder walker;
+cached-features.json-or-extract with persistence, so builds are incremental;
+`forceReextract` for full rebuilds), `FeatureDatasetStore` (dataset.json +
+features.csv at the Sessions root). Key structure: the public
+`Selectors` table — ONE ordered list of (name, accessor, availability)
+defining "what is a numeric feature"; statistics and CSV both consume it, so
+column order, stat order and naming cannot drift. Statistics contract:
+population std (÷N), computed only over rows carrying the feature (a
+replay-less session contributes nothing to replay stats — sampleCount is
+explicit). ReplayManager modification (additive, justified): the established
+front door gains BuildFeatureDataset + context menu, edit-mode safe. 10 new
+EditMode tests incl. hand-computed statistics, cache-vs-force semantics,
+determinism, exact CSV header pinning, empty-cell missingness, and a de-DE
+culture pin for the CSV. Slice boundary held: aggregation and description
+only — no thresholds, no anomaly flags, no scoring (M5/M6 territory).
+
+**M5.A — Descriptive analysis layer (log entry).** New `UnityQA.Analysis`
+namespace (core assembly): SessionAnalysis/DatasetAnalysis models,
+AnalysisEngine (pure FeatureDataset→DatasetAnalysis; z-scores, mid-rank
+percentiles, min-max normalization, deviations, deterministic rankings,
+numeric outlier candidates at |z| ≥ 2 — a stated textbook convention, not a
+judgment), AnalysisStore (analysis.json at the Sessions root). Reuse
+discipline: canonical feature list and statistics math come from
+FeatureDatasetBuilder (Selectors/ComputeStatistics) — the analysis layer
+cannot drift from the dataset layer because they share one implementation.
+Language discipline enforced at type level: candidate/far-from-mean/rank
+vocabulary only; "abnormal"/"bug" do not appear — those words belong to
+later M5/M6 slices, and the paper's method section can cite exactly this
+boundary. ReplayManager gains the single mandated "Analyze Dataset" context
+menu (loads dataset.json, builds it first if absent, saves analysis.json;
+edit-mode safe). 14 new EditMode tests, all hand-computed ground truth;
+engine tests need no files (pure function) — only the store test touches disk.
+
+**D-012 — Scope refinement: deterministic QA framework; agents/ML = future
+work (directed at M5.B kickoff).** Autonomous gameplay agents, RL/ML/LLM
+integration and AI decision-making are formally moved to future work. The
+system's contribution is the deterministic pipeline: Replay → Feature
+Extraction → Dataset → Statistical Analysis → Rule-Based Quality Oracles →
+Reports. Recorded because the paper must describe the actual implemented
+system — this decision is what makes every claim in it checkable.
+
+**M5.B — Oracle framework (log entry).** New `UnityQA.Oracles` namespace:
+IQualityOracle (Name/Description/Enabled/Evaluate; null = not-applicable;
+Evaluate must be pure — the runner stamps time), OracleContext + factory
+(the ONE file-I/O point: contexts assembled from dataset/analysis/catalog/
+validation in chronological order; oracles never touch disk),
+OracleResult/OracleRunResults (severity vocabulary info|warning|critical;
+evidence[] as machine-checkable strings), OracleRegistry (explicit ordered
+registration, duplicate names rejected, no reflection/DI per spec),
+OracleRunner (session-major/oracle-minor deterministic order; exception
+isolation in the event-bus tradition — a throwing oracle is an ORACLE error,
+counted separately, never a game verdict), OracleResultStore
+(oracle-results.json). ReplayManager gains the single mandated "Run Quality
+Oracles" menu with a root-parameterized overload (tests run on temp roots;
+courtesy chain builds dataset/analysis if absent). Zero-oracle runs are
+valid and green — the framework is proven before any rule exists. 13 new
+EditMode tests via stub oracles incl. order, isolation, four-way accounting,
+determinism, and a full manager end-to-end on a temp root.
+
+**M5.C — BenchGame v2: the benchmark level (log entry).** Game side (foreign
+-code rule intact): SessionOutcome enum (Success/SpikeDeath/OutOfBounds/
+Quit), GameRun (Running→Ended lifecycle; once-only outcome STRUCTURALLY —
+EndRun no-ops after the first; killY watch on the physics clock; freeze on
+end; Escape=quit, R=reset), SpikeHazard/ExitDoor (report-don't-decide
+triggers), BenchmarkLevelBuilder (Level_Benchmark from code: spawn → four
+≤3-tile gaps within GUT-SPEC kinematics → exit; two avoidable static spikes;
+builds the FULL instrumented [QA] object — closing the QA-SETUP rebuild
+pitfall — creating DefaultQAConfig if absent). QA side, all additive:
+IRunOutcomeSource (third small observer interface in the IGutSpecSource
+pattern — frozen IGameAdapter untouched; neutral RunOutcomeInfo so core
+never learns game enum names), adapter maps and relays, sampler emits — per
+run end, fixed order: PlayerDied(21) for deaths / TriggerFired(23,
+"exit.door") for success / always RunEnded(25, new append). Deliberate
+payoff: reserved event types go live and features.deaths /
+checkpointsReached start counting with zero feature-extraction changes.
+BenchGame.Editor.asmdef gains UnityQA/UnityQA.Adapters refs (builder
+assembles the QA stack — asmdef refs are part of the slice contract,
+HOTFIX lesson applied proactively). 5 new PlayMode tests: success/spike/
+oob outcomes with event chains, once-only under repeated EndRun, freeze-on
+-death, reset-to-spawn.
+
+**M5.D — Core quality oracles (log entry).** The first three concrete rules,
+each answering ONE question: ReplayConsistency (over the existing M3.C
+validation result — no playback in Evaluate; FAIL is severity WARNING
+because replay infidelity is an apparatus problem, not a gameplay defect),
+Completion (recorded outcome == Success; FAIL warning — attribution is not
+its job), Hazard (failure attribution: SpikeDeath → warning, designed
+hazard; OutOfBounds → CRITICAL, the falls-out-of-world defect class QA
+exists for; Quit and unknown outcome names → skip, never guess). Framework
+extension, additive: OracleContext gains RunOutcome, read by the factory as
+the LAST RunEnded event in events.jsonl (multi-run sessions: final state
+wins — policy documented; anchored parsing of our own writer, pinned by
+test against real JsonLineWriter output). Sessions with no recorded outcome
+SKIP outcome-oracles — absence of evidence is not evidence of failure.
+ReplayManager's registry now self-populates with exactly these three on
+first access (three explicit lines, reviewable in a diff; no placeholders).
+14 new EditMode tests covering every branch of every oracle, registration,
+and a mixed-session runner scenario with full four-way accounting.
+
+**HOTFIX-3 — Validation start-state control (M5.D stabilization).**
+(a) A GameRun left in Ended state (controller disabled, body unsimulated)
+guaranteed divergence — the validator now resets the run before playback.
+(b) Teleporting to telemetry sample[0] started every validation run one
+sampler interval AHEAD of the true t = 0 position (the first sample is
+captured 1/telemetryHz after session start); fixed by first-order backward
+extrapolation using the sample's own recorded velocity (M4.A fields) —
+stationary starts unchanged.
+
+**HOTFIX-4 — Input-latch and phase-alignment fixes (M5.D stabilization).**
+The controller's input latch (moveInput/jumpRequested, written only in
+Update) survived EndRun's component-disable and fired the dead player's
+last command on the first physics step after any reset — ResetInputState()
+(new, additive, read-only-surface JumpRequested alongside) is now called by
+GameRun.ResetRun and the validator. Playback is armed BEFORE the validation
+session starts, removing a ~2-rendered-frame input lag against the
+validation session's telemetry clock — with the side effect that validation
+sessions record the REPLAYED input into their own replay.json (re-playable
+like any session; the catalog stops indexing empty replays).
+
+**HOTFIX-5 — Replay determinism root cause: render-domain replay
+(M5.D stabilization).** Symptom: a fresh Level_Benchmark Success run
+replayed cleanly but validation FAILED (max 15.65u, first divergence
+t≈1.2s — the first jump). Root cause: M3.A recorded one frame per RENDERED
+frame and M3.B played one frame per rendered frame, but the controller
+consumes input once per PHYSICS step — and the number of rendered frames
+between two steps is a function of the machine's momentary frame rate
+(editor: several hundred fps against 50 Hz physics). The recorded input
+sequence therefore landed on DIFFERENT physics steps at playback than at
+recording — every jump shifted by whole steps, which Level_Benchmark's
+precision gaps convert into binary path changes (the D-011 "honest
+limitation", now fatal instead of latent). Fix, end to end in the step
+domain: PlayerController2D re-samples the seam in FixedUpdate immediately
+before consuming (frame-rate independent by construction; keyboard
+unchanged); ReplayRecorder captures per FixedUpdate at order −10 — after
+ReplayPlayer (−50), before the controller (0) — recording exactly what the
+step consumes (latch OR down-now, via the HOTFIX-4 JumpRequested surface);
+ReplayPlayer advances one frame per FixedUpdate and clears the replay
+source's jump edge in Update so the controller's Update latch cannot
+double-consume a recorded press. replay.json bumps to schemaVersion 2 with
+`inputDomain: "fixedStep"`; v1 files still load with a legacy-timing
+warning. The mapping "recorded frame → physics step" is now 1:1 on any
+frame rate — determinism is structural, not tolerance-tuned.
+
+**M5.D stabilization — replay outcome reporting & comparison.** Playback
+now observes GameRun and reports "Replay Outcome: <Success|SpikeDeath|
+OutOfBounds|Quit>" ("Unknown" if the run never ended during playback), and
+resets an already-Ended run before playing (feeding input to a frozen
+player is never a meaningful replay). Validation gains the discrete second
+axis: validation.json v2 records originalOutcome/replayOutcome (each
+session's last RunEnded, read by the SAME reader the oracles use) plus
+outcomesCompared/outcomeMatch; a comparable mismatch downgrades a
+trajectory PASS to FAIL, missing outcomes never change the verdict, and a
+manual Quit original is not comparable (Escape is not in the input seam).
+The console verdict is now a human-readable block (outcomes, max/mean/RMS,
+first divergence, samples, duration delta); the artifact stays
+machine-readable. 7 new EditMode tests pin ApplyOutcomes branch by branch.
+
+**D-013 — Project-local QAData storage (M5.D stabilization).**
+persistentDataPath buried research artifacts in AppData/LocalLow — hostile
+to debugging, IEEE evidence collection, and dataset sharing. New QAPaths
+(Core) is the single path authority: in the EDITOR everything lives under
+`<project>/QAData/` — `Sessions/` (session folders, self-contained per the
+frozen schema: session.json, events.jsonl, replay.json, validation.json,
+features.json, plus catalog.json at the root), `Datasets/` (dataset.json +
+features.csv), `Analysis/` (analysis.json), `Reports/` (oracle-results.json,
+future M7 output), `Exports/` (reserved for packaged evidence); in a player
+build the identical tree sits under persistentDataPath/QAData. Per-session
+replay/validation artifacts deliberately STAY inside their session folder —
+the frozen schema and every reader (catalog, features, oracles) depend on a
+self-contained session folder. QALogger.SessionsRoot now delegates to
+QAPaths (every existing consumer relocates through the one accessor it
+already used); ReplayManager's default menu paths route dataset/analysis/
+report artifacts to their subfolders while the root-parameterized test
+overload keeps the everything-under-one-root convention. One-time
+"Migrate Legacy Sessions" menu copies AppData sessions across (copy, not
+move; regenerable cross-session artifacts are rebuilt, not migrated).
+QAData/ is gitignored. 4 new EditMode tests pin the layout.
+
 **A1/A2 — Schema amendments at M2 approval.** Per-stream header line carrying
 `schemaVersion` + `sessionId`; canonical session ID becomes a UUID; folder
 names stay human-sortable. Frozen into EVENT-SCHEMA.md v1.

@@ -102,6 +102,33 @@ namespace UnityQA.Replay
         }
 
         /// <summary>
+        /// Fold the recorded run outcomes into a comparison result (M5.D
+        /// stabilization; pure, EditMode-testable). Outcomes are comparable
+        /// only when BOTH sessions recorded one and the original is not a
+        /// manual Quit (Escape is not part of the input seam, so a quit can
+        /// never be reproduced by playback — not comparing is honest, failing
+        /// would be wrong). A comparable MISMATCH downgrades a trajectory
+        /// PASS to FAIL: same path within tolerance but a different ending is
+        /// not a reproduced run. Missing outcomes never change the verdict —
+        /// absence of evidence is not evidence of failure (M5.D oracle rule).
+        /// </summary>
+        public static void ApplyOutcomes(ReplayValidationResult result,
+                                         string originalOutcome, string replayOutcome)
+        {
+            result.originalOutcome = originalOutcome ?? "";
+            result.replayOutcome = replayOutcome ?? "";
+            result.outcomesCompared = result.originalOutcome.Length > 0
+                                   && result.replayOutcome.Length > 0
+                                   && result.originalOutcome != "Quit";
+            result.outcomeMatch = result.outcomesCompared
+                               && result.originalOutcome == result.replayOutcome;
+
+            if (result.outcomesCompared && !result.outcomeMatch
+                && result.verdict == ReplayValidationResult.VerdictPass)
+                result.verdict = ReplayValidationResult.VerdictFail;
+        }
+
+        /// <summary>
         /// Linear interpolation of a trajectory at time t, advancing a caller
         /// -owned cursor (callers iterate in increasing t, so the scan is a
         /// single forward pass overall). Times outside the range clamp to the

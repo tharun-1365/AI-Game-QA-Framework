@@ -42,3 +42,8 @@ Thumbs.db
 # Crash reports
 sysinfo.txt
 crashlytics-build.properties
+
+# QA artifacts (D-013): sessions, datasets, analysis, reports live in
+# UnityQA/QAData — generated experiment data, packaged via Exports/ when
+# something needs to be preserved as evidence, never committed wholesale.
+UnityQA/QAData/

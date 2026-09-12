@@ -25,10 +25,21 @@ namespace UnityQA.Replay
     [Serializable]
     public sealed class ReplayRecording
     {
-        /// <summary>Bump on any wire-format change; readers key off this.</summary>
-        public const int CurrentSchemaVersion = 1;
+        /// <summary>Bump on any wire-format change; readers key off this.
+        /// v2 (HOTFIX-5): frames are PHYSICS-STEP domain and inputDomain says
+        /// so — v1 files (render-frame domain) still load, but players warn
+        /// that their timing is best-effort.</summary>
+        public const int CurrentSchemaVersion = 2;
+
+        /// <summary>inputDomain value for v2 recordings: one frame per fixed
+        /// physics step — the frame-rate-independent domain.</summary>
+        public const string InputDomainFixedStep = "fixedStep";
 
         public int schemaVersion;
+
+        /// <summary>"fixedStep" since v2. Empty/null = legacy v1 render-frame
+        /// recording (one frame per Update at whatever fps the editor ran).</summary>
+        public string inputDomain;
 
         /// <summary>UUID of the session this replay was recorded in — must
         /// match the sibling session.json (validation gate R-5).</summary>
@@ -54,6 +65,7 @@ namespace UnityQA.Replay
             return new ReplayRecording
             {
                 schemaVersion = CurrentSchemaVersion,
+                inputDomain = InputDomainFixedStep,
                 sessionId = sessionId,
                 recordingStartTime = recordingStartTime,
                 frameCount = capturedFrames.Count,

@@ -43,6 +43,22 @@ namespace UnityQA.Adapters
             jumpHeld = frame.jumpHeld;
         }
 
+        /// <summary>
+        /// Drop only the jump down-edge, keeping movement and hold state
+        /// (HOTFIX-5). With fixed-step playback the frame is pushed in
+        /// FixedUpdate and consumed by the controller's FixedUpdate in the
+        /// same step; the controller's UPDATE then also reads JumpDown to
+        /// latch keyboard presses — if the edge were still asserted there, one
+        /// recorded press would latch a second, phantom jump for the next
+        /// step. ReplayPlayer clears the edge in its Update (order -50, before
+        /// the controller's) so each recorded down-edge is consumed exactly
+        /// once, by the step it was recorded on.
+        /// </summary>
+        public void ClearJumpEdge()
+        {
+            jumpDown = false;
+        }
+
         /// <summary>Reset to neutral (no movement, no jump). Called on stop/finish.</summary>
         public void Clear()
         {

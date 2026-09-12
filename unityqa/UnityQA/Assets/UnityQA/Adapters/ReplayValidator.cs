@@ -158,23 +158,81 @@ namespace UnityQA.Adapters
                 running = null;
                 yield break;
             }
-            TrajectorySample start = original.Samples[0];
-            controller.transform.position = new Vector3(start.x, start.y, 0f);
+
+            // HOTFIX-3a (M5.C determinism regression): if the scene has a
+            // GameRun and its previous run ENDED, the player is still frozen
+            // (controller disabled, body unsimulated). Replaying into that
+            // state is a guaranteed divergence — restore Running first so the
+            // replayed run starts from the same live state the original did.
+            var gameRun = FindFirstObjectByType<GameRun>();
+            if (gameRun != null && gameRun.State == GameRun.RunState.Ended)
+            {
+                Debug.Log("[UnityQA] Validation: previous run had ended — resetting GameRun first.");
+                gameRun.ResetRun();
+            }
+
+            // HOTFIX-3b (root cause of the benchmark divergence): the replay's
+            // input frame 0 corresponds to SESSION START (t = 0), but the
+            // first telemetry sample is captured one sampler interval LATER
+            // (t ≈ 1/telemetryHz) — by which time a moving player is already
+            // ~0.6u past the true starting point. Teleporting to sample[0]
+            // therefore started every validation run spatially AHEAD of the
+            // original: a constant offset that stayed under the 0.75u
+            // threshold on flat Level_Baseline (latent since M3.C) but turns
+            // into a binary path change at Level_Benchmark's precision jumps.
+            // Fix: first-order backward extrapolation to t = 0 using the
+            // sample's own recorded velocity (available since M4.A) —
+            // stationary starts are unchanged (v = 0 → same point).
+            TrajectorySample s0 = original.Samples[0];
+            Vector2 startPos = new Vector2(s0.x - s0.vx * s0.t, s0.y - s0.vy * s0.t);
+            controller.transform.position = new Vector3(startPos.x, startPos.y, 0f);
             var body = controller.GetComponent<Rigidbody2D>();
             if (body != null) body.linearVelocity = Vector2.zero;
+
+            // HOTFIX-4a (remaining half of "controlled initial conditions"):
+            // position and velocity were being reset, but the CONTROLLER'S
+            // INPUT LATCH was not. moveInput and jumpRequested are written
+            // only in Update; GameRun.EndRun disables the controller, so both
+            // freeze at the dead player's last command and survive ResetRun
+            // and the teleport. FixedUpdate runs before Update, so the first
+            // physics step after the teleport applied that stale command —
+            // uncommanded horizontal motion, and a phantom jump from the
+            // spawn point whenever the previous run ended with a press
+            // latched. Clearing the latch makes the replay start from rest in
+            // the input domain too.
+            controller.ResetInputState();
+
             yield return new WaitForFixedUpdate(); // let physics settle the teleport
 
             // ---- 3. Replay under recording -------------------------------------
-            runner.StartSession();
-            string validationSessionId = runner.CurrentSession.SessionId;
-            string validationFolder = Path.Combine(QALogger.SessionsRoot,
-                                                   runner.CurrentSession.FolderName);
-            yield return null;      // sampler's first tick scheduled outside this frame
-
+            // HOTFIX-4b (input-stream phase alignment): playback is now ARMED
+            // BEFORE the session starts, and the extra frame of slack is gone.
+            //
+            // The old order was StartSession → yield null → Play, which meant
+            // recorded frame 0 was applied on session-update #2 while the
+            // ORIGINAL run consumed its frame 0 on session-update #0 — the
+            // whole input stream ran ~2 rendered frames late against the
+            // validation session's own telemetry clock, so every jump took off
+            // late by the same amount. The dropped `yield return null` was
+            // guarding against the sampler emitting inside the SessionStarted
+            // publish, which SampleLoop already prevents structurally by
+            // yielding its interval before the first EmitSample.
+            //
+            // Arming first has a second effect worth naming: SessionStarted
+            // now reaches ReplayRecorder while the controller is already on
+            // the ReplayInputSource, so the validation session's own
+            // replay.json records the replayed input instead of the idle
+            // keyboard — validation sessions become re-playable like any
+            // other, and the catalog stops indexing empty replays.
             bool finished = false;
             Action onFinish = () => finished = true;
             player.PlaybackFinished += onFinish;
             player.Play();
+
+            runner.StartSession();
+            string validationSessionId = runner.CurrentSession.SessionId;
+            string validationFolder = Path.Combine(QALogger.SessionsRoot,
+                                                   runner.CurrentSession.FolderName);
 
             float originalDuration = original.Samples[original.Samples.Count - 1].t
                                    - original.Samples[0].t;
@@ -210,17 +268,34 @@ namespace UnityQA.Adapters
             result.validationFolder = validationFolder;
             result.parseErrors = original.ParseErrors + replayed.ParseErrors;
 
+            // M5.D stabilization: the second axis of fidelity — did the
+            // replayed run END the same way? Outcomes come from each session's
+            // own events.jsonl (last RunEnded wins — the same reader the
+            // oracles use, so validator and oracles can never disagree).
+            TrajectoryComparer.ApplyOutcomes(result,
+                Oracles.OracleContextFactory.ReadLastRunOutcome(
+                    Path.Combine(originalFolder, "events.jsonl")),
+                Oracles.OracleContextFactory.ReadLastRunOutcome(
+                    Path.Combine(validationFolder, "events.jsonl")));
+
             File.WriteAllText(Path.Combine(validationFolder, ResultFileName),
                               JsonUtility.ToJson(result, prettyPrint: true));
 
             LastResult = result;
-            Debug.Log($"[UnityQA] Replay validation {result.verdict} — max {result.maxDeviation:F3}u, " +
-                      $"mean {result.meanDeviation:F3}u, rms {result.rmsDeviation:F3}u over " +
-                      $"{result.comparedSamples} samples" +
+            string outcomeBlock = result.outcomesCompared
+                ? $"\n  Original Outcome: {result.originalOutcome}" +
+                  $"\n  Replay Outcome:   {result.replayOutcome}" +
+                  $"\n  Outcome Match:    {(result.outcomeMatch ? "YES" : "NO")}"
+                : "\n  Outcomes: not compared (missing on one side, or original was a manual Quit)";
+            Debug.Log($"[UnityQA] Replay validation {result.verdict}{outcomeBlock}" +
+                      $"\n  Max Error:  {result.maxDeviation:F3}u (threshold {result.thresholdUnits:F2}u)" +
+                      $"\n  Mean Error: {result.meanDeviation:F3}u   RMS: {result.rmsDeviation:F3}u" +
+                      $"\n  First Divergence: " +
                       (result.firstDivergenceTime >= 0f
-                          ? $", first divergence at t={result.firstDivergenceTime:F2}s"
-                          : ", no threshold crossing") +
-                      $" → {validationFolder}\\{ResultFileName}");
+                          ? $"t={result.firstDivergenceTime:F2}s"
+                          : "none (no threshold crossing)") +
+                      $"\n  Samples: {result.comparedSamples}   Duration Δ: {result.durationDelta:F2}s" +
+                      $"\n  → {Path.Combine(validationFolder, ResultFileName)}");
 
             running = null;
             ValidationCompleted?.Invoke(result);

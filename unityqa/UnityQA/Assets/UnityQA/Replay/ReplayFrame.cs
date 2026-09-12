@@ -23,20 +23,26 @@ using System;
 
 namespace UnityQA.Replay
 {
-    /// <summary>One frame of attempted input. Field names = replay.json format.</summary>
+    /// <summary>One frame of recorded input. Field names = replay.json format.
+    /// Since v2 (HOTFIX-5) a frame is one PHYSICS STEP — the recording's
+    /// inputDomain field says which domain a given file uses.</summary>
     [Serializable]
     public struct ReplayFrame
     {
-        /// <summary>0-based frame index since recording start.</summary>
+        /// <summary>0-based frame index since recording start (v2: physics-step
+        /// index; v1 legacy: rendered-frame index).</summary>
         public int frameNumber;
 
-        /// <summary>Seconds since recording start (frame-domain clock).</summary>
+        /// <summary>Seconds since recording start (v2: fixed-time clock;
+        /// v1 legacy: render-frame clock).</summary>
         public float timestamp;
 
-        /// <summary>Attempted horizontal command: exactly -1, 0, or +1.</summary>
+        /// <summary>Horizontal command consumed this step: exactly -1, 0, or +1.</summary>
         public float horizontal;
 
-        /// <summary>Jump button went down on this frame (GetButtonDown semantics).</summary>
+        /// <summary>v2: a jump request is consumed by this physics step
+        /// (already-latched or pressed now). v1 legacy: button went down on
+        /// this rendered frame (GetButtonDown semantics).</summary>
         public bool jumpPressed;
 
         /// <summary>Jump button held during this frame.</summary>

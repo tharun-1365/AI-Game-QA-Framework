@@ -2,10 +2,25 @@
 // UnityQA.Adapters — ReplayRecorder.cs                           (M3 Slice A)
 //
 // PURPOSE
-//   Records one ReplayFrame of attempted input per Update while a session is
-//   active, and exports the whole recording as pretty replay.json into the
+//   Records one ReplayFrame of CONSUMED input per physics step while a session
+//   is active, and exports the whole recording as pretty replay.json into the
 //   session's folder when the session ends. Recording only — no playback, no
 //   loading, no comparison (those are M3.B/C by roadmap).
+//
+// FIXED-STEP DOMAIN (HOTFIX-5 — the determinism root-cause fix)
+//   M3.A recorded one frame per RENDERED frame (Update). But the controller
+//   consumes input once per PHYSICS step (FixedUpdate), and how many rendered
+//   frames fall between two steps depends on the frame rate at that moment —
+//   so the mapping "recorded frame → physics step" was frame-rate dependent,
+//   and playback (also render-domain) re-applied the same input sequence onto
+//   DIFFERENT physics steps whenever the frame rate differed from recording
+//   time. At editor frame rates (hundreds of fps against 50 Hz physics) that
+//   shifted every jump by multiple steps — the measured 15.65u divergence on
+//   Level_Benchmark. The fix: record and replay in the physics-step domain.
+//   One frame per FixedUpdate, captured at [DefaultExecutionOrder(-10)] —
+//   AFTER ReplayPlayer (-50) has pushed a frame (so validation sessions record
+//   the replayed input) and BEFORE PlayerController2D (0) consumes — holding
+//   exactly the values the controller is about to consume this step.
 //
 // WHY THIS CLASS LIVES IN THE ADAPTERS ASSEMBLY (decision D-011)
 //   The Slice A mandate: input comes ONLY through BenchGame's
@@ -48,20 +63,22 @@ namespace UnityQA.Adapters
     /// </summary>
     [RequireComponent(typeof(QARunner))]
     [RequireComponent(typeof(QALogger))]
+    [DefaultExecutionOrder(-10)] // after ReplayPlayer (-50), before PlayerController2D (0)
     public sealed class ReplayRecorder : MonoBehaviour
     {
-        /// <summary>Safety cap: 30 min at 60 fps. A session that long has
-        /// bigger problems than a truncated replay; capture stops with one
-        /// warning, the session continues untouched.</summary>
+        /// <summary>Safety cap: 36 min at the 50 Hz fixed step. A session that
+        /// long has bigger problems than a truncated replay; capture stops with
+        /// one warning, the session continues untouched.</summary>
         public const int MaxFrames = 108_000;
 
         private QARunner runner;
-        private IPlayerInputSource input;     // the ONLY input access path (D-008 seam)
+        private IPlayerInputSource input;     // the ONLY input command path (D-008 seam)
+        private PlayerController2D controller; // read-only observation: the jump latch (HOTFIX-5)
         private readonly List<ReplayFrame> frames = new List<ReplayFrame>(4096);
 
         private bool recording;
         private bool capWarned;
-        private float recordingStartTime;
+        private float recordingStartFixedTime;
         private string recordingStartUtc;
 
         /// <summary>Frames captured so far (read-only; overlay/tests).</summary>
@@ -90,9 +107,9 @@ namespace UnityQA.Adapters
             // Bind to the player's input source lazily, at session start —
             // the controller's Awake (which creates the source) has certainly
             // run by the time a human presses F9.
-            if (input == null)
+            if (controller == null)
             {
-                var controller = FindFirstObjectByType<PlayerController2D>();
+                controller = FindFirstObjectByType<PlayerController2D>();
                 input = controller != null ? controller.InputSource : null;
             }
 
@@ -105,12 +122,12 @@ namespace UnityQA.Adapters
 
             frames.Clear();               // capacity is retained — no re-allocation
             capWarned = false;
-            recordingStartTime = Time.time;
+            recordingStartFixedTime = Time.fixedTime;
             recordingStartUtc = System.DateTime.UtcNow.ToString("o");
             recording = true;
         }
 
-        private void Update()
+        private void FixedUpdate()
         {
             if (!recording) return;
 
@@ -125,12 +142,19 @@ namespace UnityQA.Adapters
                 return;
             }
 
+            // What THIS physics step will consume (HOTFIX-5): the controller's
+            // FixedUpdate (order 0, after us) sets moveInput = input.MoveX and
+            // latches input.JumpDown into jumpRequested before consuming — so
+            // "already-latched OR down-now" is exactly the jump decision of
+            // this step. Reading the latch is observation (public read-only
+            // surface, same category as Velocity/IsGrounded); every COMMAND
+            // still flows only through the D-008 seam.
             frames.Add(new ReplayFrame
             {
                 frameNumber = frames.Count,
-                timestamp = Time.time - recordingStartTime,
+                timestamp = Time.fixedTime - recordingStartFixedTime,
                 horizontal = input.MoveX,
-                jumpPressed = input.JumpDown,
+                jumpPressed = (controller != null && controller.JumpRequested) || input.JumpDown,
                 jumpHeld = input.JumpHeld
             });
         }

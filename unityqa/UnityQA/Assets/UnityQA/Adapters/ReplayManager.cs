@@ -231,11 +231,23 @@ namespace UnityQA.Adapters
 
         private Oracles.OracleRegistry oracleRegistry;
 
-        /// <summary>The oracle registry. Empty in M5.B by design — concrete
-        /// oracles register here in the next slice (explicit registration,
-        /// no reflection). Public so tests and future setup code can register.</summary>
-        public Oracles.OracleRegistry OracleRegistry =>
-            oracleRegistry ?? (oracleRegistry = new Oracles.OracleRegistry());
+        /// <summary>The oracle registry, populated with the M5.D core oracles
+        /// on first access (explicit registration — no reflection; the active
+        /// rule set is these three lines, reviewable in a diff).</summary>
+        public Oracles.OracleRegistry OracleRegistry
+        {
+            get
+            {
+                if (oracleRegistry == null)
+                {
+                    oracleRegistry = new Oracles.OracleRegistry();
+                    oracleRegistry.Register(new Oracles.ReplayConsistencyOracle());
+                    oracleRegistry.Register(new Oracles.CompletionOracle());
+                    oracleRegistry.Register(new Oracles.HazardOracle());
+                }
+                return oracleRegistry;
+            }
+        }
 
         /// <summary>M5.B workflow: analysis.json (chain-building it and the
         /// dataset first if absent) → contexts → runner → oracle-results.json.

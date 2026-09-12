@@ -89,6 +89,40 @@ namespace BenchGame
 
         /// <summary>Horizontal command consumed this step: -1, 0, or +1.</summary>
         public float MoveInput => moveInput;
+
+        /// <summary>
+        /// True while a jump press is latched and awaiting the next physics
+        /// step (HOTFIX-4, read-only observation surface — same category as
+        /// MoveInput/IsGrounded). Exposed because the latch is a real piece of
+        /// controller state that survives across frames, and anything
+        /// establishing controlled initial conditions must be able to see it.
+        /// </summary>
+        public bool JumpRequested => jumpRequested;
+
+        /// <summary>
+        /// Drop any latched input so the next FixedUpdate acts on a clean
+        /// slate (HOTFIX-4, additive — no gameplay behaviour changes on the
+        /// normal path, because Update overwrites both fields every frame the
+        /// controller is enabled).
+        ///
+        /// WHY THIS IS NEEDED. moveInput and jumpRequested are written ONLY in
+        /// Update. When something disables this component — GameRun.EndRun
+        /// freezes the player at run end — Update stops and both fields freeze
+        /// at whatever the player was doing in that last instant. Re-enabling
+        /// the component does not clear them, and FixedUpdate runs BEFORE
+        /// Update in a frame where both are due. So the first physics step
+        /// after a reset applies the DEAD player's last command: a stale
+        /// moveInput drives uncommanded motion, and a stale jumpRequested
+        /// fires a phantom jump from the spawn point. Any caller that
+        /// repositions the player and expects it to start from rest must call
+        /// this; it is the input-domain half of "controlled initial
+        /// conditions", which until now only covered position and velocity.
+        /// </summary>
+        public void ResetInputState()
+        {
+            moveInput = 0f;
+            jumpRequested = false;
+        }
         // -------------------------------------------------------------------
 
         // D-008 seam (executed M2 Slice D): commands come through an interface.
@@ -143,6 +177,24 @@ namespace BenchGame
 
         private void FixedUpdate()
         {
+            // HOTFIX-5 (replay determinism, root cause): re-sample the seam AT
+            // the physics step, immediately before consumption. Until now the
+            // consumed values were whatever the LAST Update latched — and how
+            // many rendered frames fall between two physics steps depends on
+            // the machine's frame rate at that moment. That made the mapping
+            // "input → physics step" frame-rate dependent, which is exactly
+            // the determinism bug FR-1.19 forbids (it was hidden while input
+            // and playback both lived in the render domain; the fixed-step
+            // replay pipeline exposes it). Sampling here is frame-rate
+            // independent by construction. For the keyboard this is the same
+            // raw -1/0/+1 read one phase later — no gameplay change; the
+            // Update latch below still catches presses BETWEEN steps, and the
+            // JumpDown check here additionally catches a press delivered at
+            // step granularity (a replay source) at the exact step it was
+            // recorded on.
+            moveInput = input.MoveX;
+            if (input.JumpDown) jumpRequested = true;
+
             // Ground test: a small box at the feet against the Ground layer.
             // OverlapBox (not raycast) tolerates standing on tile seams and edges.
             isGrounded = Physics2D.OverlapBox(

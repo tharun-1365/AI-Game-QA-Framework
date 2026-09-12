@@ -181,5 +181,89 @@ namespace UnityQA.Tests
             Assert.AreEqual(0.12f, back.maxDeviation, 1e-5f);
             Assert.AreEqual(ReplayValidationResult.VerdictPass, back.verdict);
         }
+
+        // ----------------------- outcome comparison (M5.D stabilization) ------
+
+        private static ReplayValidationResult PassResult() => new ReplayValidationResult
+        { verdict = ReplayValidationResult.VerdictPass };
+
+        [Test]
+        public void Outcomes_MatchingSuccess_KeepsPass()
+        {
+            var r = PassResult();
+            TrajectoryComparer.ApplyOutcomes(r, "Success", "Success");
+            Assert.IsTrue(r.outcomesCompared);
+            Assert.IsTrue(r.outcomeMatch);
+            Assert.AreEqual(ReplayValidationResult.VerdictPass, r.verdict);
+        }
+
+        [Test]
+        public void Outcomes_Mismatch_DowngradesPassToFail()
+        {
+            var r = PassResult();
+            TrajectoryComparer.ApplyOutcomes(r, "Success", "OutOfBounds");
+            Assert.IsTrue(r.outcomesCompared);
+            Assert.IsFalse(r.outcomeMatch);
+            Assert.AreEqual(ReplayValidationResult.VerdictFail, r.verdict,
+                "same path within tolerance but a different ending is not a reproduced run");
+        }
+
+        [Test]
+        public void Outcomes_MatchingFailureOutcome_IsAMatch()
+        {
+            var r = PassResult();
+            TrajectoryComparer.ApplyOutcomes(r, "SpikeDeath", "SpikeDeath");
+            Assert.IsTrue(r.outcomeMatch, "a faithfully reproduced spike death is a MATCH");
+            Assert.AreEqual(ReplayValidationResult.VerdictPass, r.verdict);
+        }
+
+        [Test]
+        public void Outcomes_MissingEitherSide_NeverChangesVerdict()
+        {
+            var r1 = PassResult();
+            TrajectoryComparer.ApplyOutcomes(r1, null, "Success");
+            Assert.IsFalse(r1.outcomesCompared);
+            Assert.IsFalse(r1.outcomeMatch);
+            Assert.AreEqual(ReplayValidationResult.VerdictPass, r1.verdict);
+            Assert.AreEqual("", r1.originalOutcome, "null normalizes to empty for the wire format");
+
+            var r2 = PassResult();
+            TrajectoryComparer.ApplyOutcomes(r2, "Success", "");
+            Assert.IsFalse(r2.outcomesCompared);
+            Assert.AreEqual(ReplayValidationResult.VerdictPass, r2.verdict);
+        }
+
+        [Test]
+        public void Outcomes_QuitOriginal_IsNotComparable()
+        {
+            var r = PassResult();
+            TrajectoryComparer.ApplyOutcomes(r, "Quit", "OutOfBounds");
+            Assert.IsFalse(r.outcomesCompared,
+                "Escape is not part of the input seam — a quit is not replayable");
+            Assert.AreEqual(ReplayValidationResult.VerdictPass, r.verdict);
+        }
+
+        [Test]
+        public void Outcomes_TrajectoryFail_StaysFail_EvenOnMatch()
+        {
+            var r = new ReplayValidationResult { verdict = ReplayValidationResult.VerdictFail };
+            TrajectoryComparer.ApplyOutcomes(r, "Success", "Success");
+            Assert.IsTrue(r.outcomeMatch);
+            Assert.AreEqual(ReplayValidationResult.VerdictFail, r.verdict,
+                "matching outcomes never excuse a trajectory divergence");
+        }
+
+        [Test]
+        public void Outcomes_SerializationRoundTrips()
+        {
+            var r = PassResult();
+            TrajectoryComparer.ApplyOutcomes(r, "Success", "SpikeDeath");
+            var back = JsonUtility.FromJson<ReplayValidationResult>(JsonUtility.ToJson(r, true));
+            Assert.AreEqual("Success", back.originalOutcome);
+            Assert.AreEqual("SpikeDeath", back.replayOutcome);
+            Assert.IsTrue(back.outcomesCompared);
+            Assert.IsFalse(back.outcomeMatch);
+            Assert.AreEqual(ReplayValidationResult.VerdictFail, back.verdict);
+        }
     }
 }
