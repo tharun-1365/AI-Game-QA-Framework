@@ -289,6 +289,68 @@ namespace UnityQA.Adapters
         [ContextMenu("Run Quality Oracles")]
         public void RunQualityOraclesMenu() => RunQualityOracles(QALogger.SessionsRoot);
 
+        // ---------------------------------------------- planted-bug eval (M6.C)
+
+        /// <summary>M6.C: score the planted-bug evaluation campaign. Reads the
+        /// user-authored evaluation-campaign.json from <paramref name="reportsRoot"/>
+        /// (the experiment plan — which recorded sessions exercise which PB case,
+        /// and the answer-key detector each case expects), runs the SAME oracle
+        /// chain RunQualityOracles uses over the recorded sessions, then hands
+        /// the real verdicts to EvaluationEngine to score detected/missed/false
+        /// positives and write evaluation.json + evaluation.csv. Orchestration
+        /// only — no oracle logic here, no ground truth fed into any oracle.
+        /// Edit-mode safe (pure file I/O). Returns null if no campaign exists.</summary>
+        public Evaluation.EvaluationReport RunPlantedBugEvaluation(string sessionsRoot, string reportsRoot)
+        {
+            Evaluation.EvaluationCampaign campaign = Evaluation.EvaluationStore.LoadCampaign(reportsRoot);
+            if (campaign == null)
+            {
+                Debug.LogError($"[UnityQA] No {Evaluation.EvaluationStore.CampaignFileName} in '{reportsRoot}' — " +
+                               "author the campaign plan first (schema: docs/BENCHMARK.md M6-C).");
+                return null;
+            }
+
+            // Same chain as RunQualityOracles, but we also keep the contexts so
+            // the report can record each session's recorded outcome.
+            Features.FeatureDataset dataset = Features.FeatureDatasetStore.LoadJson(sessionsRoot);
+            if (dataset == null)
+            {
+                dataset = Features.FeatureDatasetBuilder.Build(sessionsRoot, false);
+                Features.FeatureDatasetStore.SaveJson(dataset, sessionsRoot);
+            }
+            Analysis.DatasetAnalysis analysis = Analysis.AnalysisStore.Load(sessionsRoot);
+            if (analysis == null)
+            {
+                analysis = Analysis.AnalysisEngine.Analyze(dataset);
+                Analysis.AnalysisStore.Save(analysis, sessionsRoot);
+            }
+
+            var contexts = Oracles.OracleContextFactory.BuildContexts(sessionsRoot, dataset, analysis);
+            Oracles.OracleRunResults results = Oracles.OracleRunner.Run(OracleRegistry, contexts);
+
+            var outcomes = new Dictionary<string, string>();
+            foreach (Oracles.OracleContext c in contexts)
+                if (!string.IsNullOrEmpty(c.SessionId)) outcomes[c.SessionId] = c.RunOutcome;
+
+            Evaluation.EvaluationReport report =
+                Evaluation.EvaluationEngine.Evaluate(campaign, results, outcomes);
+            string jsonPath = Evaluation.EvaluationStore.SaveJson(report, reportsRoot);
+            Evaluation.EvaluationStore.SaveCsv(report, reportsRoot);
+
+            Evaluation.EvaluationAggregate a = report.aggregate;
+            Debug.Log($"[UnityQA] Evaluation — {a.plantedCaseCount} planted case(s), " +
+                      $"{a.totalDetected}/{a.totalEvaluableBugRuns} bug-runs detected" +
+                      (a.overallDetectionRateAvailable ? $" ({a.overallDetectionRate:P0})" : " (rate unavailable)") +
+                      $", {a.totalIndeterminate} indeterminate; {a.falsePositives}/{a.cleanRuns} clean false positive(s)" +
+                      (a.falsePositiveRateAvailable ? $" ({a.falsePositiveRate:P0})" : "") +
+                      $" → {jsonPath} (+ {Evaluation.EvaluationStore.CsvFileName})");
+            return report;
+        }
+
+        [ContextMenu("Run Planted-Bug Evaluation")]
+        public void RunPlantedBugEvaluationMenu() =>
+            RunPlantedBugEvaluation(QALogger.SessionsRoot, Core.QAPaths.ReportsRoot);
+
         // ------------------------------------------------------------- helpers
 
         private ReplayMetadata FindEntry(string sessionId)

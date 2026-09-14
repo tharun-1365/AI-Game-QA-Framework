@@ -20,14 +20,22 @@ namespace UnityQA.Tests
     {
         // ---- builders -------------------------------------------------------
 
+        // Tail box defaults to the whole-session box (a run confined the whole
+        // time); pass the tail* args to model a wide approach that ends in a
+        // small confined region (the M6-A scene's spawn→basin case).
         private static TrajectorySummary Traj(float minX, float maxX, float minY, float maxY,
-                                              float durationSec, int samples = 200)
+                                              float durationSec, int samples = 200,
+                                              float? tailMinX = null, float? tailMaxX = null,
+                                              float? tailMinY = null, float? tailMaxY = null)
             => new TrajectorySummary
             {
                 available = true,
                 sampleCount = samples,
                 minX = minX, maxX = maxX, minY = minY, maxY = maxY,
-                firstT = 0f, lastT = durationSec
+                firstT = 0f, lastT = durationSec,
+                tailSampleCount = samples,
+                tailMinX = tailMinX ?? minX, tailMaxX = tailMaxX ?? maxX,
+                tailMinY = tailMinY ?? minY, tailMaxY = tailMaxY ?? maxY
             };
 
         private static SessionFeatures Feat(float totalDistance, int directionChanges,
@@ -81,6 +89,42 @@ namespace UnityQA.Tests
             StringAssert.Contains("Soft lock", r.reason);
             CollectionAssert.Contains(r.evidence, "sessionOutcome=none");
             CollectionAssert.Contains(r.evidence, "confined=true");
+        }
+
+        [Test]
+        public void SoftLock_ApproachThenTrapped_Detected()
+        {
+            // The M6-A scene case: the player spawns at x≈2 and walks ~5-8u to
+            // the basin, so the WHOLE-session span is wide (x 2→10, ≈8u > the 6u
+            // cap), but the TRAILING window is entirely inside the ~3u basin.
+            // Confinement must be judged from the region the player ends up in,
+            // not the whole run — otherwise this genuine 50s trap is missed
+            // (the exact failure reported on Level_PlantedBugs_A).
+            var r = new SoftLockOracle().Evaluate(Ctx(
+                outcome: null,
+                f: Feat(totalDistance: 120f, directionChanges: 30, jumpPresses: 25),
+                traj: Traj(2f, 10f, -1.55f, 2f, durationSec: 50f,
+                           tailMinX: 7f, tailMaxX: 10f, tailMinY: -1.55f, tailMaxY: 0.6f)));
+            Assert.IsNotNull(r);
+            Assert.IsFalse(r.passed, "a soft lock reached after an approach must still be detected");
+            Assert.AreEqual(OracleResult.SeverityCritical, r.severity);
+            CollectionAssert.Contains(r.evidence, "confined=true");
+            // The whole-session span exceeds the cap; only the windowed extent detects it.
+            CollectionAssert.Contains(r.evidence, "sessionSpanX=8");
+        }
+
+        [Test]
+        public void SoftLock_ApproachThenStillMoving_DoesNotFalselyReport()
+        {
+            // Same wide approach, but the player is STILL crossing the level in
+            // the trailing window (tail span large) → progress, not a trap.
+            var r = new SoftLockOracle().Evaluate(Ctx(
+                outcome: null,
+                f: Feat(totalDistance: 60f, directionChanges: 6, jumpPresses: 5),
+                traj: Traj(2f, 34f, 0f, 3f, durationSec: 8f,
+                           tailMinX: 22f, tailMaxX: 34f, tailMinY: 0f, tailMaxY: 3f)));
+            Assert.IsTrue(r.passed, "still moving across the level in the window is not confinement");
+            CollectionAssert.Contains(r.evidence, "confined=false");
         }
 
         [Test]

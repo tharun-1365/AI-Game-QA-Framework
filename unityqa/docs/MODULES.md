@@ -499,6 +499,49 @@ SKIP for SoftLock and PASS / FAIL / SKIP (incl. PB-003 discrimination) for
 MissingTrigger. Existing suites untouched; no replay/event/QAData schema
 change; M6-A geometry and M6-C both untouched.
 
+**M6.C — Planted-bug evaluation campaign (log entry).** The quantitative
+layer that turns the M6-A ground truth + M6-B detectors into reproducible
+numbers, built as the same pure-engine + store + thin-ReplayManager pattern
+as every collection artifact — no framework redesign, no oracle-logic change.
+New `Assets/UnityQA/Evaluation/`: `EvaluationCampaign` (the experiment plan —
+one case per PB plus ≥1 clean control, each listing the recorded session IDs
+per repeat and the answer-key detector[s] it expects), `EvaluationReport`
+(the evaluation.json wire format, raw per-run results preserved for the
+paper), `EvaluationEngine` (pure scoring), `EvaluationStore`
+(evaluation-campaign.json in / evaluation.json + evaluation.csv out, under
+QAData/Reports). `ReplayManager.RunPlantedBugEvaluation` (menu "Run
+Planted-Bug Evaluation") orchestrates: it runs the SAME dataset→analysis→
+contexts→OracleRunner chain RunQualityOracles uses, then hands the real
+verdicts to EvaluationEngine.
+
+Ground truth vs detection stays strictly separated: a case is "detected" in
+a run ONLY because a real oracle returned FAIL on that case's recorded
+session; the campaign's `expectedDetectors`/`isClean` (the BENCHMARK.md
+answer key) are consulted solely to SCORE those verdicts afterward, never
+fed into an oracle — pinned by a test that a non-expected oracle firing is
+NOT a detection. Case↔session assignment is an explicit user-authored
+manifest (not auto-classified from outcomes — that would let detection
+define the ground truth). Answer-key detector mapping: PB-001→Hazard
+(OutOfBounds/critical), PB-002→SoftLock, PB-003→Hazard (SpikeDeath), PB-004
+→MissingTrigger.
+
+Metrics: per bug — runs, evaluableRuns, detected, missed, indeterminate,
+detectionRate, consistency; overall — totals + overall detection rate; clean
+control — cleanRuns, falsePositives, false-positive rate. Honesty rules:
+detectionRate denominator is EVALUABLE runs (a run where every expected
+detector SKIPPED is indeterminate, never a false "missed"); a rate with a
+zero denominator is marked `*Available=false` ("unavailable"), never written
+as NaN (JsonUtility would emit invalid JSON). Determinism: `generatedUtc` is
+the only non-deterministic field (tests null it and compare bytes); case
+order = campaign order, run order = index, firing-oracle order = registration
+order. Default repeats = 5 (DESIGN.md M8), carried in the campaign and
+configurable there. 11 EditMode tests (EvaluationEngineTests) cover all-four-
+detected, one-missed, clean-no-FP, clean-FP, repeat aggregation + consistency,
+indeterminate, zero-run/null-campaign safety, timestamp-independent
+determinism, answer-key-not-bug-ID scoring, and serialization/CSV. BENCHMARK.md
+gains an M6-C procedure section and keeps the *Detected* column `pending` —
+no measured numbers are recorded until a real Unity campaign runs.
+
 **A1/A2 — Schema amendments at M2 approval.** Per-stream header line carrying
 `schemaVersion` + `sessionId`; canonical session ID becomes a UUID; folder
 names stay human-sortable. Frozen into EVENT-SCHEMA.md v1.

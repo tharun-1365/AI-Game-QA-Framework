@@ -105,7 +105,14 @@ namespace UnityQA.Oracles
             }
 
             // (b)(c)(d) alive + outcome-less: is it trapped-but-trying, confined?
-            float extent = Mathf.Max(traj.SpanX, traj.SpanY);
+            //
+            // CONFINEMENT is measured over the TRAILING window (the region the
+            // player ends up in), NOT the whole-session box — the walk-in from
+            // spawn to wherever it gets stuck would otherwise inflate the extent
+            // and hide a real trap (e.g. a basin ~5-8u from spawn). ACTIVITY and
+            // TRAVEL stay whole-session: they establish the player kept trying
+            // and moved a real distance across the run.
+            float extent = Mathf.Max(traj.TailSpanX, traj.TailSpanY);
             bool activeAttempts = f.directionChanges >= MinDirectionChanges ||
                                   f.inputJumpPresses >= MinJumpPresses;
             bool movedRealPath = f.totalDistance >= MinPathLength;
@@ -129,9 +136,14 @@ namespace UnityQA.Oracles
             };
             result.evidence.Add("sessionOutcome=none");
             result.evidence.Add("alive=true");
-            result.evidence.Add("spanX=" + traj.SpanX.ToString("0.###", CultureInfo.InvariantCulture));
-            result.evidence.Add("spanY=" + traj.SpanY.ToString("0.###", CultureInfo.InvariantCulture));
+            // Confinement is the TRAILING-window extent (drives the verdict);
+            // the whole-session spans are kept for context.
+            result.evidence.Add("tailSpanX=" + traj.TailSpanX.ToString("0.###", CultureInfo.InvariantCulture));
+            result.evidence.Add("tailSpanY=" + traj.TailSpanY.ToString("0.###", CultureInfo.InvariantCulture));
             result.evidence.Add("extent=" + extent.ToString("0.###", CultureInfo.InvariantCulture));
+            result.evidence.Add("windowSec=" + ObservationWindowSec.ToString("0.###", CultureInfo.InvariantCulture));
+            result.evidence.Add("sessionSpanX=" + traj.SpanX.ToString("0.###", CultureInfo.InvariantCulture));
+            result.evidence.Add("sessionSpanY=" + traj.SpanY.ToString("0.###", CultureInfo.InvariantCulture));
             result.evidence.Add("pathLength=" + f.totalDistance.ToString("0.###", CultureInfo.InvariantCulture));
             result.evidence.Add("directionChanges=" + f.directionChanges);
             result.evidence.Add("jumpPresses=" + f.inputJumpPresses);

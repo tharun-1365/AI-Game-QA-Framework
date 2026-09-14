@@ -71,8 +71,22 @@ namespace UnityQA.Oracles
         public float minX, maxX, minY, maxY;
         public float firstT, lastT;
 
+        // M6.B fix: a SECOND bounding box over only the TRAILING window (the
+        // last SoftLockOracle.ObservationWindowSec of samples) — the region the
+        // player occupies at the END of the run. The whole-session box (above)
+        // is inflated by the approach from spawn to wherever the player ends
+        // up, so it cannot tell "confined now" from "travelled here". The tail
+        // box is the confinement measure; the whole-session box stays for
+        // context/evidence. Derived from the SAME PlayerSample telemetry — no
+        // new event/file/schema field. When the session is shorter than the
+        // window, the tail box equals the whole-session box.
+        public int tailSampleCount;
+        public float tailMinX, tailMaxX, tailMinY, tailMaxY;
+
         public float SpanX => maxX - minX;
         public float SpanY => maxY - minY;
+        public float TailSpanX => tailMaxX - tailMinX;
+        public float TailSpanY => tailMaxY - tailMinY;
         public float DurationSec => lastT - firstT;
     }
 
@@ -161,6 +175,39 @@ namespace UnityQA.Oracles
                 if (p.y < s.minY) s.minY = p.y;
                 if (p.y > s.maxY) s.maxY = p.y;
             }
+
+            // Trailing-window box: samples in the last ObservationWindowSec. The
+            // window length is SoftLockOracle's (the one consumer that needs
+            // confinement), documented there. lastT is itself a sample time, so
+            // the window is never empty; if the whole run is shorter than the
+            // window, every sample qualifies and the tail box == whole box.
+            float windowStart = s.lastT - SoftLockOracle.ObservationWindowSec;
+            bool tailInit = false;
+            foreach (TrajectorySample p in traj.Samples)
+            {
+                if (p.t < windowStart) continue;
+                if (!tailInit)
+                {
+                    s.tailMinX = s.tailMaxX = p.x;
+                    s.tailMinY = s.tailMaxY = p.y;
+                    tailInit = true;
+                }
+                else
+                {
+                    if (p.x < s.tailMinX) s.tailMinX = p.x;
+                    if (p.x > s.tailMaxX) s.tailMaxX = p.x;
+                    if (p.y < s.tailMinY) s.tailMinY = p.y;
+                    if (p.y > s.tailMaxY) s.tailMaxY = p.y;
+                }
+                s.tailSampleCount++;
+            }
+            if (!tailInit) // defensive: window caught no sample → use whole box
+            {
+                s.tailMinX = s.minX; s.tailMaxX = s.maxX;
+                s.tailMinY = s.minY; s.tailMaxY = s.maxY;
+                s.tailSampleCount = s.sampleCount;
+            }
+
             return s;
         }
 

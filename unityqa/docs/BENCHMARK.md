@@ -74,6 +74,68 @@ platform 4's far edge (cell x27 — the natural take-off tile), which is
 exactly the cell PB-001 removes from the collider map. A run ending in Quit
 is not comparable (Escape is outside the input seam — M5-D rule).
 
+## M6-C evaluation procedure (the campaign)
+
+M6-C scores how well the oracles detect the four planted defects, and writes
+the result under `QAData/Reports/`. Ground truth (this file) and detection
+(the report) stay separate: the *Detected* column above stays `pending`; the
+measured detection results live only in `evaluation.json`.
+
+**Answer-key detector mapping** (which oracle should catch each class — used
+only to SCORE oracle verdicts, never fed to an oracle): PB-001 → `Hazard`
+(OutOfBounds → critical) · PB-002 → `SoftLock` · PB-003 → `Hazard`
+(SpikeDeath) · PB-004 → `MissingTrigger`. The clean `Level_Benchmark` golden
+run is the negative control: it must raise none of the five oracles.
+
+**Repeats.** Default **N = 5** runs per case (DESIGN.md M8), configurable via
+the campaign's `repeats` field. Every individual run is recorded before
+aggregation so reproducibility/variance is evidenced, not assumed.
+
+**How to run it (Unity):**
+1. Record the sessions per the manual-reproduction and golden-run protocols
+   above — N golden runs on `Level_Benchmark`, and N runs per planted bug on
+   `Level_PlantedBugs_A` (or replay a golden run against it for the
+   regression classes). Validate replays where the class needs it (PB-004
+   uses the replay-regression reference; PB-003 the outcome comparison).
+2. Author `QAData/Reports/evaluation-campaign.json` — the experiment plan
+   assigning recorded session IDs to each case (schema below).
+3. On the `[QA]` object: **ReplayManager ▸ Run Planted-Bug Evaluation**. It
+   runs the five oracles over the recorded sessions and writes
+   `QAData/Reports/evaluation.json` (+ `evaluation.csv`).
+
+**Campaign schema** (`evaluation-campaign.json`):
+
+```json
+{
+  "schemaVersion": 1,
+  "benchmarkId": "Level_PlantedBugs_A vs Level_Benchmark",
+  "repeats": 5,
+  "cases": [
+    { "caseId": "PB-001", "bugClass": "Collider gap",   "isClean": false,
+      "expectedDetectors": ["Hazard"],         "sessionIds": ["<sid>", "..."] },
+    { "caseId": "PB-002", "bugClass": "Soft lock",       "isClean": false,
+      "expectedDetectors": ["SoftLock"],       "sessionIds": ["<sid>", "..."] },
+    { "caseId": "PB-003", "bugClass": "Spike on path",   "isClean": false,
+      "expectedDetectors": ["Hazard"],         "sessionIds": ["<sid>", "..."] },
+    { "caseId": "PB-004", "bugClass": "Missing trigger", "isClean": false,
+      "expectedDetectors": ["MissingTrigger"], "sessionIds": ["<sid>", "..."] },
+    { "caseId": "clean",  "bugClass": "Baseline",        "isClean": true,
+      "expectedDetectors": [],                 "sessionIds": ["<sid>", "..."] }
+  ]
+}
+```
+
+**Metric definitions** (`evaluation.json`): per case — `runs`,
+`evaluableRuns` (runs where an expected detector produced any verdict),
+`detected`, `missed`, `indeterminate` (no expected-detector verdict —
+insufficient evidence, NOT a miss), `detectionRate = detected / evaluableRuns`
+(`detectionRateAvailable=false` when there are no evaluable runs), and
+`consistent` (all evaluable runs agreed). Clean cases report `falsePositives`
+(runs where any oracle FAILED). Aggregate — overall detection rate over all
+evaluable bug-runs, and false-positive rate over clean runs; each carries an
+`*Available` flag rather than ever emitting NaN. `generatedUtc` is the only
+non-deterministic field.
+
 ## Original Module-1 taxonomy (historical; superseded by the M6 registry)
 
 The v1.0 plan targeted six classes via an autonomous explorer. The explorer
