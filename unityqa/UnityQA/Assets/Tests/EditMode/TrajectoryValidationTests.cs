@@ -122,6 +122,120 @@ namespace UnityQA.Tests
                 TrajectoryComparer.Compare(null, many, 0.75f).verdict);
         }
 
+        // ----------------------- constant-offset alignment (M6.D) -------------
+
+        [Test]
+        public void Alignment_IdenticalTrajectory_ZeroOffset_Pass()
+        {
+            var a = Line(0f, 20, 0.1f, i => new Vector2(i * 0.6f, 1.5f));
+            var b = Line(0f, 20, 0.1f, i => new Vector2(i * 0.6f, 1.5f));
+
+            var r = TrajectoryComparer.Compare(a, b, 0.75f);
+            Assert.AreEqual(ReplayValidationResult.VerdictPass, r.verdict);
+            Assert.AreEqual(0f, r.alignmentOffsetSec, 1e-4f, "no offset needed for identical input");
+            Assert.AreEqual(0f, r.maxDeviation, 1e-4f);
+        }
+
+        [Test]
+        public void Alignment_ConstantPhaseLead_PassAfterAlignment()
+        {
+            // Same spatial path; the replay runs a constant 0.30 s AHEAD (a
+            // frame-domain playback phase lead). Both share the spawn-idle prefix
+            // real runs have, so the window edges compare idle-to-idle.
+            Func<float, Vector2> path = tt =>
+                new Vector2(tt <= 0.6f ? 2f : 2f + 6f * (tt - 0.6f), 1.5f);
+            var a = Line(0f, 40, 0.1f, i => path(i * 0.1f));
+            var b = Line(0f, 40, 0.1f, i => path(i * 0.1f + 0.30f)); // 0.30 s ahead
+
+            var r = TrajectoryComparer.Compare(a, b, 0.75f);
+            Assert.AreEqual(ReplayValidationResult.VerdictPass, r.verdict,
+                "a constant temporal phase lead must not read as spatial divergence");
+            Assert.AreEqual(-0.30f, r.alignmentOffsetSec, 0.04f, "recovers the ~0.30 s lead");
+            Assert.Less(r.maxDeviation, 0.1f, "aligned deviation collapses to ~0");
+        }
+
+        [Test]
+        public void Alignment_SpatialDisplacement_FailsEvenAfterAlignment()
+        {
+            // A constant 1.0 u VERTICAL displacement is spatial, not temporal —
+            // no time-shift can remove it, so the run must still FAIL.
+            var a = Line(0f, 25, 0.1f, i => new Vector2(i * 0.6f, 1.5f));
+            var b = Line(0f, 25, 0.1f, i => new Vector2(i * 0.6f, 2.5f));
+
+            var r = TrajectoryComparer.Compare(a, b, 0.75f);
+            Assert.AreEqual(ReplayValidationResult.VerdictFail, r.verdict);
+            Assert.AreEqual(0f, r.alignmentOffsetSec, 1e-4f, "shifting time cannot help a vertical offset");
+            Assert.AreEqual(1.0f, r.maxDeviation, 1e-3f);
+        }
+
+        [Test]
+        public void Alignment_DifferentRoute_SameTiming_Fails()
+        {
+            // Same x-progression and timing, but the replay takes a different
+            // route: a 2 u vertical bump mid-run. No constant shift removes a
+            // localized spatial excursion without misaligning the rest, so the
+            // min-MEAN search keeps offset 0 and the run FAILS.
+            var a = Line(0f, 30, 0.1f, i => new Vector2(i * 0.6f, 1.5f));
+            var b = Line(0f, 30, 0.1f, i =>
+            {
+                float t = i * 0.1f;
+                float y = 1.5f + (t >= 1.0f && t <= 1.5f ? 2.0f : 0f);
+                return new Vector2(i * 0.6f, y);
+            });
+
+            var r = TrajectoryComparer.Compare(a, b, 0.75f);
+            Assert.AreEqual(ReplayValidationResult.VerdictFail, r.verdict);
+            Assert.AreEqual(0f, r.alignmentOffsetSec, 1e-4f, "min-MEAN keeps the offset at 0 for a real divergence");
+            Assert.Greater(r.maxDeviation, 1.5f);
+        }
+
+        [Test]
+        public void Alignment_PB004Signature_RawLargeAlignedSmall_Pass()
+        {
+            // The PB-004 evidence in miniature: the replay follows the same route
+            // (idle -> run -> jump) but a constant ~0.30 s ahead, plus a small
+            // residual fidelity error. RAW deviation is large (~3 u, during the
+            // jump); after de-phasing it collapses under threshold -> PASS, so
+            // MissingTriggerOracle can see verdict == PASS.
+            var a = Line(0f, 40, 0.1f, i => Golden(i * 0.1f));
+            var b = Line(0f, 40, 0.1f, i =>
+            {
+                Vector2 g = Golden(i * 0.1f + 0.30f);   // 0.30 s ahead
+                return new Vector2(g.x, g.y + 0.30f);   // + constant residual
+            });
+
+            // raw (index-aligned == offset-0) deviation is large.
+            float rawMax = 0f;
+            for (int i = 0; i < a.Count; i++)
+            {
+                float dx = a[i].x - b[i].x, dy = a[i].y - b[i].y;
+                rawMax = Mathf.Max(rawMax, Mathf.Sqrt(dx * dx + dy * dy));
+            }
+            Assert.Greater(rawMax, 2.5f, "raw phase-offset deviation is large (~3 u)");
+
+            var r = TrajectoryComparer.Compare(a, b, 0.75f);
+            Assert.AreEqual(ReplayValidationResult.VerdictPass, r.verdict,
+                "a spatially faithful replay with a constant phase lead must PASS");
+            Assert.AreEqual(-0.30f, r.alignmentOffsetSec, 0.04f, "recovers the ~0.30 s constant lead");
+            Assert.Less(r.maxDeviation, 0.5f, "aligned deviation is small (~0.3 u)");
+            Assert.Greater(r.maxDeviation, 0.1f, "the constant residual is NOT hidden");
+            Assert.AreEqual(0f, r.durationDelta, 1e-3f, "raw timing discrepancy preserved separately");
+        }
+
+        /// <summary>PB-004-shaped reference path: 0.5 s spawn idle, run right at
+        /// 6 u/s, one jump (parabolic apex 2.2 u) at t in [1.2, 1.8].</summary>
+        private static Vector2 Golden(float tt)
+        {
+            float x = tt <= 0.5f ? 2f : 2f + 6f * (tt - 0.5f);
+            float y = 1.5f;
+            if (tt >= 1.2f && tt <= 1.8f)
+            {
+                float u = (tt - 1.2f) / 0.6f;
+                y = 1.5f + 2.2f * 4f * u * (1f - u);
+            }
+            return new Vector2(x, y);
+        }
+
         // ------------------------------ reader --------------------------------
 
         [Test]

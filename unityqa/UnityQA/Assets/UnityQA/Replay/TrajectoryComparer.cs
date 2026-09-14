@@ -10,9 +10,18 @@
 // METHOD
 //   1. Time-normalize both trajectories to start at t = 0 (each session's
 //      first sample defines its zero — removes session-start jitter).
+//   1b. (M6.D) Bounded constant-offset alignment: the deterministic fixed-step
+//      replay can play back a small CONSTANT phase ahead/behind the original
+//      (frame-domain playback, D-011). Search a bounded set of constant time
+//      offsets and keep the one that minimises MEAN deviation — MEAN, not MAX,
+//      so a genuine localized spatial divergence cannot be balanced away by a
+//      mis-alignment (a real divergence raises the mean at every offset). Only
+//      one constant shift is allowed (no time-warping); the raw timing
+//      discrepancy stays in durationDelta and the applied shift is reported in
+//      alignmentOffsetSec.
 //   2. For every ORIGINAL sample inside the overlapping time window, linearly
-//      interpolate the VALIDATION trajectory at that time (single forward
-//      pointer — O(n+m), no allocation, no LINQ) and take the Euclidean
+//      interpolate the VALIDATION trajectory at that (offset) time (single
+//      forward pointer — O(n+m), no allocation, no LINQ) and take the Euclidean
 //      position deviation.
 //   3. Aggregate max / mean / RMS; record the first threshold crossing.
 //   Interpolation (not nearest-sample) matters: the two runs' samplers tick
@@ -35,6 +44,24 @@ namespace UnityQA.Replay
     /// <summary>Pure trajectory comparison → ReplayValidationResult metrics.</summary>
     public static class TrajectoryComparer
     {
+        /// <summary>M6.D bounded constant-offset alignment — the largest phase
+        /// offset (seconds, either direction) the search will compensate. The
+        /// bound is what keeps the alignment honest: it can NEVER absorb a real
+        /// divergence as a huge time-warp. ±0.5 s comfortably covers the observed
+        /// frame-domain playback lead (~0.3 s) while staying far below any real
+        /// route timing.</summary>
+        public const float MaxAlignmentSec = 0.5f;
+
+        /// <summary>Search resolution — the project's physics Fixed Timestep
+        /// (0.02 s), the granularity at which the deterministic fixed-step
+        /// simulation can actually differ.</summary>
+        public const float AlignmentStepSec = 0.02f;
+
+        /// <summary>Mean-deviation tie tolerance: within this, prefer the SMALLEST
+        /// |offset| (0 = the pre-M6.D behaviour), so an offset is applied only
+        /// when it genuinely improves the fit.</summary>
+        private const float AlignmentEpsilon = 1e-4f;
+
         /// <summary>
         /// Compare two trajectories. Identity fields (session IDs, folders,
         /// parseErrors) are the caller's to fill — this method owns only the
@@ -67,8 +94,67 @@ namespace UnityQA.Replay
             // Compare over the window both trajectories cover.
             float window = Mathf.Min(result.originalDuration, result.validationDuration);
 
-            float sum = 0f, sumSq = 0f, max = 0f;
-            int compared = 0;
+            // --- M6.D: bounded constant-offset alignment (minimise MEAN) -------
+            // Pick the single constant offset in [-Max, +Max] (step = fixed
+            // timestep) that minimises MEAN deviation; ties resolved toward the
+            // smallest |offset| so offset 0 (the old behaviour) wins unless a
+            // shift strictly improves the whole-trajectory fit.
+            int steps = Mathf.RoundToInt(MaxAlignmentSec / AlignmentStepSec);
+            float bestOffset = 0f, bestMean = float.MaxValue, bestAbs = float.MaxValue;
+            for (int k = -steps; k <= steps; k++)
+            {
+                float offset = k * AlignmentStepSec;
+                MeasureAtOffset(original, validation, origT0, valT0, window, offset, thresholdUnits,
+                                out _, out float mean, out _, out _, out int n);
+                if (n == 0) continue;
+                float absOff = Mathf.Abs(offset);
+                if (mean < bestMean - AlignmentEpsilon ||
+                    (mean <= bestMean + AlignmentEpsilon && absOff < bestAbs))
+                {
+                    bestMean = mean;
+                    bestOffset = offset;
+                    bestAbs = absOff;
+                }
+            }
+
+            // --- final reported metrics, measured at the chosen offset ---------
+            MeasureAtOffset(original, validation, origT0, valT0, window, bestOffset, thresholdUnits,
+                            out float max, out float mean2, out float rms, out float firstDiv,
+                            out int compared);
+
+            result.comparedSamples = compared;
+            if (compared == 0) return result; // verdict stays INVALID
+
+            result.alignmentOffsetSec = bestOffset;
+            result.maxDeviation = max;
+            result.meanDeviation = mean2;
+            result.rmsDeviation = rms;
+            result.firstDivergenceTime = firstDiv;
+            result.verdict = max <= thresholdUnits
+                ? ReplayValidationResult.VerdictPass
+                : ReplayValidationResult.VerdictFail;
+            return result;
+        }
+
+        /// <summary>
+        /// Deviation metrics of the original against the validation trajectory
+        /// shifted by a CONSTANT <paramref name="offset"/> seconds, over the
+        /// shared window. Pure; a fresh forward cursor per call (the query times
+        /// t + offset are monotonic for a fixed offset, so the single-pass scan
+        /// still holds). Used both to search the offset and to compute the final
+        /// reported metrics, so search and result can never disagree.
+        /// </summary>
+        private static void MeasureAtOffset(List<TrajectorySample> original,
+                                            List<TrajectorySample> validation,
+                                            float origT0, float valT0, float window,
+                                            float offset, float thresholdUnits,
+                                            out float max, out float mean, out float rms,
+                                            out float firstDivergence, out int compared)
+        {
+            float sum = 0f, sumSq = 0f;
+            max = 0f;
+            firstDivergence = -1f;
+            compared = 0;
             int cursor = 0; // forward pointer into validation — never rewinds
 
             for (int i = 0; i < original.Count; i++)
@@ -76,7 +162,7 @@ namespace UnityQA.Replay
                 float t = original[i].t - origT0;
                 if (t > window) break;
 
-                Vector2 replayed = EvaluateAt(validation, valT0 + t, ref cursor);
+                Vector2 replayed = EvaluateAt(validation, valT0 + t + offset, ref cursor);
                 float dx = original[i].x - replayed.x;
                 float dy = original[i].y - replayed.y;
                 float deviation = Mathf.Sqrt(dx * dx + dy * dy);
@@ -85,20 +171,11 @@ namespace UnityQA.Replay
                 sum += deviation;
                 sumSq += deviation * deviation;
                 if (deviation > max) max = deviation;
-                if (deviation > thresholdUnits && result.firstDivergenceTime < 0f)
-                    result.firstDivergenceTime = t;
+                if (deviation > thresholdUnits && firstDivergence < 0f) firstDivergence = t;
             }
 
-            result.comparedSamples = compared;
-            if (compared == 0) return result; // verdict stays INVALID
-
-            result.maxDeviation = max;
-            result.meanDeviation = sum / compared;
-            result.rmsDeviation = Mathf.Sqrt(sumSq / compared);
-            result.verdict = max <= thresholdUnits
-                ? ReplayValidationResult.VerdictPass
-                : ReplayValidationResult.VerdictFail;
-            return result;
+            mean = compared > 0 ? sum / compared : 0f;
+            rms = compared > 0 ? Mathf.Sqrt(sumSq / compared) : 0f;
         }
 
         /// <summary>

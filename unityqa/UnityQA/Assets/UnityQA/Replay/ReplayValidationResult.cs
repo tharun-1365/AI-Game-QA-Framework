@@ -10,7 +10,8 @@
 //   results table in the IEEE paper (deviation metrics ARE the experiment).
 //
 // VERDICTS
-//   PASS    — maxDeviation ≤ threshold across the compared window.
+//   PASS    — maxDeviation ≤ threshold across the compared window (measured
+//             after the M6.D bounded constant-offset alignment).
 //   FAIL    — deviation exceeded threshold (firstDivergenceTime says when).
 //   INVALID — not enough data to judge (either trajectory < 2 samples).
 // -----------------------------------------------------------------------------
@@ -24,8 +25,9 @@ namespace UnityQA.Replay
     public sealed class ReplayValidationResult
     {
         /// <summary>v2 (M5.D stabilization): adds the run-outcome comparison
-        /// fields below — additive only, v1 readers unaffected.</summary>
-        public const int CurrentSchemaVersion = 2;
+        /// fields below. v3 (M6.D): adds <see cref="alignmentOffsetSec"/>.
+        /// Additive only — older readers are unaffected.</summary>
+        public const int CurrentSchemaVersion = 3;
         public const string VerdictPass = "PASS";
         public const string VerdictFail = "FAIL";
         public const string VerdictInvalid = "INVALID";
@@ -56,6 +58,17 @@ namespace UnityQA.Replay
         public float originalDuration;
         public float validationDuration;
         public float durationDelta;
+
+        // --- constant-offset alignment (v3, M6.D) ---------------------------
+        /// <summary>The CONSTANT time offset (seconds) applied to the validation
+        /// trajectory before scoring, chosen within a bounded search to
+        /// compensate a small replay playback phase lead/lag (frame-domain
+        /// playback, D-011). Negative = the replay ran AHEAD of the original.
+        /// This records only the applied alignment — the RAW timing discrepancy
+        /// is preserved separately in <see cref="durationDelta"/> and is never
+        /// hidden. The deviation metrics above are measured at this offset;
+        /// 0 means no offset improved the fit (the pre-M6.D behaviour).</summary>
+        public float alignmentOffsetSec;
 
         // --- run-outcome comparison (v2, M5.D stabilization) -----------------
         // A trajectory can stay under threshold while the RUN still ends
