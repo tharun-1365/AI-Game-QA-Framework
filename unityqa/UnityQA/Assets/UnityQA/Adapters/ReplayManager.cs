@@ -351,6 +351,36 @@ namespace UnityQA.Adapters
         public void RunPlantedBugEvaluationMenu() =>
             RunPlantedBugEvaluation(QALogger.SessionsRoot, Core.QAPaths.ReportsRoot);
 
+        // ---------------------------------------------- HTML QA report (M7)
+
+        /// <summary>M7: render the persisted planted-bug evaluation into a
+        /// self-contained HTML report. Thin orchestration only — load the stored
+        /// evidence (ReportStore), render it (HtmlReportGenerator), write
+        /// unityqa-report.html under Reports. No detection and no HTML built
+        /// here. Returns null (and logs) when no evaluation.json exists yet.</summary>
+        public string GenerateHtmlReport(string reportsRoot, string sessionsRoot)
+        {
+            Reporting.ReportInputs inputs = Reporting.ReportStore.Load(reportsRoot, sessionsRoot);
+            if (inputs == null)
+            {
+                Debug.LogError($"[UnityQA] No {Evaluation.EvaluationStore.JsonFileName} in '{reportsRoot}' — " +
+                               "run Run Planted-Bug Evaluation before generating a report.");
+                return null;
+            }
+
+            string html = Reporting.HtmlReportGenerator.Generate(inputs, System.DateTime.UtcNow.ToString("o"));
+            string path = Reporting.ReportStore.SaveHtml(html, reportsRoot);
+
+            Evaluation.EvaluationAggregate a = inputs.report.aggregate;
+            Debug.Log($"[UnityQA] HTML QA report — {a.totalDetected}/{a.totalEvaluableBugRuns} bug-runs detected, " +
+                      $"{a.falsePositives}/{a.cleanRuns} clean false positive(s) → {path}");
+            return path;
+        }
+
+        [ContextMenu("Generate HTML QA Report")]
+        public void GenerateHtmlReportMenu() =>
+            GenerateHtmlReport(Core.QAPaths.ReportsRoot, QALogger.SessionsRoot);
+
         // ------------------------------------------------------------- helpers
 
         private ReplayMetadata FindEntry(string sessionId)
