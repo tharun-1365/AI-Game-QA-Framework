@@ -1,5 +1,5 @@
 // -----------------------------------------------------------------------------
-// UnityQA Tests — ReportingTests.cs                             (M7 Reporting)
+// UnityQA Tests — ReportingTests.cs             (M7 Reporting, M8-C2 evidence)
 //
 // Pins the M7 presentation layer: the HTML report is a faithful, deterministic
 // render of the persisted M6 evidence, it preserves the M6-D validation values
@@ -7,6 +7,14 @@
 // instead of producing a misleading page. The generator is pure (inputs +
 // injected timestamp), so these tests build evidence in memory — no file I/O,
 // no oracle, no re-scoring.
+//
+// M8-C2 additions pin EVIDENCE HONESTY in the presentation layer:
+//   * `repeats` is CONFIGURED campaign metadata, never the actual run count;
+//   * consistency is "demonstrated" only at N >= 2 evaluable runs, and is
+//     reported as "not demonstrated (N=1)" — never a green pass — below that;
+//   * configured-vs-actual conformance and replay-validation coverage are
+//     surfaced, so a shortfall cannot be read as a met target.
+// None of this re-scores anything: the stored flags/counters are rendered.
 // -----------------------------------------------------------------------------
 
 using System;
@@ -41,6 +49,39 @@ namespace UnityQA.Tests
                 falsePositives = 0, detectionRate = 1f, detectionRateAvailable = true, consistent = true,
                 perRun = new List<EvaluationRunResult> { Run(sid, "none", true, firing) }
             };
+
+        /// <summary>A planted case with an explicit run count, for the M8-C2
+        /// consistency/conformance rendering tests. `consistent` is supplied, not
+        /// derived — the report renders the stored flag, it never recomputes it.</summary>
+        private static EvaluationCaseResult PlantedN(string id, int runs, bool consistent)
+        {
+            var c = new EvaluationCaseResult
+            {
+                caseId = id, bugClass = "Missing trigger", isClean = false,
+                expectedDetectors = new List<string> { "MissingTrigger" },
+                runs = runs, evaluableRuns = runs, detected = runs, missed = 0, indeterminate = 0,
+                falsePositives = 0, detectionRate = 1f, detectionRateAvailable = true,
+                consistent = consistent,
+                perRun = new List<EvaluationRunResult>()
+            };
+            for (int i = 0; i < runs; i++)
+                c.perRun.Add(Run(id + "-s" + i, "none", true, new[] { "MissingTrigger" }));
+            return c;
+        }
+
+        /// <summary>The §3 per-case table row for <paramref name="caseId"/>.</summary>
+        private static string CaseRow(string html, string caseId)
+        {
+            // Anchor on the table CELL so the §1 conformance summary (which may
+            // name short cases inline) can never be mistaken for a case row.
+            int i = html.IndexOf(caseId + "</td>", StringComparison.Ordinal);
+            Assert.Greater(i, 0, "case " + caseId + " must appear as a per-case row");
+            int rowStart = html.LastIndexOf("<tr", i, StringComparison.Ordinal);
+            int rowEnd = html.IndexOf("</tr>", i, StringComparison.Ordinal);
+            Assert.Greater(rowStart, 0);
+            Assert.Greater(rowEnd, rowStart);
+            return html.Substring(rowStart, rowEnd - rowStart);
+        }
 
         /// <summary>An in-memory mirror of the current 4/4 + 0/5 benchmark result,
         /// with a schema-v3 validation.json attached to the PB-004 session.</summary>
@@ -127,21 +168,101 @@ namespace UnityQA.Tests
         }
 
         [Test]
-        public void Report_PB004_MissingTrigger_DetectedConsistent()
+        public void Report_PB004_MissingTrigger_Detected_ConsistencyNotDemonstratedAtN1()
         {
             string html = HtmlReportGenerator.Generate(MakeInputs(), Ts);
             // First occurrence of PB-004 is its per-case row (§3 precedes §6).
-            int i = html.IndexOf("PB-004", StringComparison.Ordinal);
-            Assert.Greater(i, 0);
-            int rowStart = html.LastIndexOf("<tr", i, StringComparison.Ordinal);
-            int rowEnd = html.IndexOf("</tr>", i, StringComparison.Ordinal);
-            Assert.Greater(rowStart, 0);
-            Assert.Greater(rowEnd, rowStart);
-            string row = html.Substring(rowStart, rowEnd - rowStart);
+            string row = CaseRow(html, "PB-004");
 
             StringAssert.Contains("MissingTrigger", row);            // expected detector shown
             StringAssert.Contains("class=\"pass\"", row);            // detected (pass state)
-            StringAssert.Contains("badge ok\">yes", row);            // consistency = true
+
+            // M8-C2: the case has exactly one evaluable run, so consistency is
+            // NOT demonstrated. The old green "yes" badge overstated the evidence.
+            StringAssert.Contains("not demonstrated (N=1)", row);
+            StringAssert.DoesNotContain("badge ok\">yes", row);
+            StringAssert.DoesNotContain("badge ok\">demonstrated", row);
+        }
+
+        [Test]
+        public void Report_ConsistencyAtN1_IsNeverAGreenPass()
+        {
+            string html = HtmlReportGenerator.Generate(MakeInputs(), Ts);
+            foreach (string id in new[] { "PB-001", "PB-002", "PB-003", "PB-004" })
+            {
+                string row = CaseRow(html, id);
+                StringAssert.Contains("not demonstrated (N=1)", row);
+                StringAssert.DoesNotContain("badge ok\">demonstrated", row);
+            }
+        }
+
+        [Test]
+        public void Report_ConsistencyAtN3_Consistent_IsDemonstrated()
+        {
+            ReportInputs inputs = MakeInputs();
+            inputs.report.cases[3] = PlantedN("PB-004", 3, true);   // three agreeing runs
+            string row = CaseRow(HtmlReportGenerator.Generate(inputs, Ts), "PB-004");
+
+            StringAssert.Contains("badge ok\">demonstrated (N=3)", row);
+            StringAssert.DoesNotContain("not demonstrated", row);
+        }
+
+        [Test]
+        public void Report_ConsistencyAtN3_Disagreeing_IsReportedAsNotConsistent()
+        {
+            ReportInputs inputs = MakeInputs();
+            inputs.report.cases[3] = PlantedN("PB-004", 3, false);  // runs disagree
+            string row = CaseRow(HtmlReportGenerator.Generate(inputs, Ts), "PB-004");
+
+            StringAssert.Contains("badge bad\">NOT consistent (N=3)", row);
+            StringAssert.DoesNotContain("badge ok\">demonstrated", row);
+        }
+
+        [Test]
+        public void Report_DistinguishesConfiguredRepeatsFromActualRuns()
+        {
+            ReportInputs inputs = MakeInputs();          // repeats = 5 configured
+            inputs.report.cases[3] = PlantedN("PB-004", 5, true);   // this one meets it
+            string html = HtmlReportGenerator.Generate(inputs, Ts);
+
+            // The configured value is labelled as campaign metadata, not as evidence.
+            StringAssert.Contains("Repeats (configured, campaign metadata)", html);
+            StringAssert.Contains("Runs (actual)", html);
+
+            // Short of target → warning mark; at/above target → check mark.
+            StringAssert.Contains("mark warn", CaseRow(html, "PB-001"));   // 1 of 5
+            StringAssert.Contains("mark ok", CaseRow(html, "PB-004"));     // 5 of 5
+        }
+
+        [Test]
+        public void Report_SurfacesRepeatConformance_AndCountsCleanControlAsExceeding()
+        {
+            // As recorded today: every planted case is short of the configured N.
+            string html = HtmlReportGenerator.Generate(MakeInputs(), Ts);
+            StringAssert.Contains("Repeat conformance", html);
+            StringAssert.Contains("0/4 planted cases meet configured N=5", html);
+            StringAssert.Contains("below target:", html);
+            StringAssert.Contains("clean control N=5", html);
+            StringAssert.Contains("exceeds target", html);   // 5 clean runs is not a shortfall
+
+            // With the planted cases at target, conformance flips to a pass badge.
+            ReportInputs full = MakeInputs();
+            for (int i = 0; i < 4; i++)
+                full.report.cases[i] = PlantedN(full.report.cases[i].caseId, 5, true);
+            string ok = HtmlReportGenerator.Generate(full, Ts);
+            StringAssert.Contains("badge ok\">4/4 planted cases meet configured N=5", ok);
+            StringAssert.DoesNotContain("below target:", ok);
+        }
+
+        [Test]
+        public void Report_SurfacesReplayValidationCoverage()
+        {
+            // 9 evaluated runs carry a sessionId (4 planted + 0 clean perRun); only
+            // the PB-004 session has a validation.json attached.
+            string html = HtmlReportGenerator.Generate(MakeInputs(), Ts);
+            StringAssert.Contains("Replay-validation coverage", html);
+            StringAssert.Contains("1 of 4 evaluated runs", html);
+            StringAssert.Contains("1 of 5 cases", html);
         }
 
         [Test]

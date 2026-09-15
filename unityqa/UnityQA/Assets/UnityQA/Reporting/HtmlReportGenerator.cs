@@ -23,6 +23,17 @@
 //   durationDelta     = raw run-duration difference.
 //   alignmentOffsetSec= bounded constant phase offset applied by M6-D.
 //   max/mean/RMS dev   = values produced AFTER the approved alignment.
+//
+// M8 EVIDENCE INTEGRITY (presentation only — derived from fields the evaluation
+// already persists; no new scoring, no new stored data, no schema change)
+//   The campaign's `repeats` is CONFIGURED metadata; the authoritative count is
+//   each case's recorded sessions (`runs`). The report shows both and flags a
+//   shortfall, so a configured target can never read as an observed count.
+//   `consistent` is true BY DEFINITION when a case has fewer than two evaluable
+//   runs (EvaluationEngine: "trivially consistent"), so it is rendered as
+//   DEMONSTRATED only at N >= 2; at N = 1 it is reported as "not demonstrated"
+//   and never as a green pass. Replay-validation coverage states how much of
+//   the evaluated evidence carries replay-fidelity proof.
 // -----------------------------------------------------------------------------
 
 using System;
@@ -60,7 +71,7 @@ namespace UnityQA.Reporting
               .Append("<style>").Append(Css()).Append("</style></head><body><main>");
 
             HeaderSection(sb, r, reportGeneratedUtc);
-            SummarySection(sb, agg);
+            SummarySection(sb, r, agg, inputs);
             PerCaseSection(sb, r);
             CleanControlSection(sb, r, agg);
             ValidationSection(sb, r, inputs);
@@ -82,12 +93,13 @@ namespace UnityQA.Reporting
             Kv(sb, "Evaluation generated (UTC)", r.generatedUtc);
             Kv(sb, "Report generated (UTC)", reportGeneratedUtc);
             Kv(sb, "Evaluation schema version", r.schemaVersion.ToString(Inv));
-            Kv(sb, "Repeats (configured)", r.repeats.ToString(Inv));
+            Kv(sb, "Repeats (configured, campaign metadata)", r.repeats.ToString(Inv));
             sb.Append("</table></header>");
         }
 
         // ------------------------------------------------- §2 executive summary
-        private static void SummarySection(StringBuilder sb, EvaluationAggregate a)
+        private static void SummarySection(StringBuilder sb, EvaluationReport r,
+                                           EvaluationAggregate a, ReportInputs inputs)
         {
             sb.Append("<section><h2>Executive summary</h2><table class=\"kv\">");
             Kv(sb, "Planted cases", a.plantedCaseCount.ToString(Inv));
@@ -104,6 +116,8 @@ namespace UnityQA.Reporting
             KvRaw(sb, "False-positive rate",
                 RatePct(a.falsePositiveRate, a.falsePositiveRateAvailable) +
                 "  (" + a.falsePositives.ToString(Inv) + "/" + a.cleanRuns.ToString(Inv) + ")");
+            KvRaw(sb, "Repeat conformance", RepeatConformance(r));
+            KvRaw(sb, "Replay-validation coverage", ValidationCoverage(r, inputs));
             sb.Append("</table></section>");
         }
 
@@ -113,8 +127,8 @@ namespace UnityQA.Reporting
             sb.Append("<section><h2>Per-case results (planted bugs)</h2>");
             sb.Append("<table class=\"grid\"><thead><tr>")
               .Append("<th>Case</th><th>Bug class</th><th>Expected detector</th>")
-              .Append("<th>Runs</th><th>Evaluable</th><th>Detected</th><th>Missed</th>")
-              .Append("<th>Indet.</th><th>Detection rate</th><th>Consistent</th>")
+              .Append("<th>Runs (actual)</th><th>Evaluable</th><th>Detected</th><th>Missed</th>")
+              .Append("<th>Indet.</th><th>Detection rate</th><th>Consistency</th>")
               .Append("<th>Firing oracle(s)</th><th>Session(s)</th></tr></thead><tbody>");
 
             if (r.cases != null)
@@ -127,13 +141,13 @@ namespace UnityQA.Reporting
                     sb.Append("<td>").Append(StatusDot(ok)).Append(Esc(c.caseId)).Append("</td>");
                     sb.Append("<td>").Append(Esc(c.bugClass)).Append("</td>");
                     sb.Append("<td>").Append(Esc(Join(c.expectedDetectors))).Append("</td>");
-                    sb.Append("<td>").Append(c.runs.ToString(Inv)).Append("</td>");
+                    sb.Append("<td>").Append(RunsCell(c, r.repeats)).Append("</td>");
                     sb.Append("<td>").Append(c.evaluableRuns.ToString(Inv)).Append("</td>");
                     sb.Append("<td>").Append(c.detected.ToString(Inv)).Append("</td>");
                     sb.Append("<td>").Append(c.missed.ToString(Inv)).Append("</td>");
                     sb.Append("<td>").Append(c.indeterminate.ToString(Inv)).Append("</td>");
                     sb.Append("<td>").Append(Esc(RatePct(c.detectionRate, c.detectionRateAvailable))).Append("</td>");
-                    sb.Append("<td>").Append(YesNo(c.consistent)).Append("</td>");
+                    sb.Append("<td>").Append(ConsistencyCell(c)).Append("</td>");
                     sb.Append("<td>").Append(Esc(Join(FiringOracles(c)))).Append("</td>");
                     sb.Append("<td class=\"mono\">").Append(Esc(Join(SessionIds(c)))).Append("</td>");
                     sb.Append("</tr>");
@@ -166,6 +180,8 @@ namespace UnityQA.Reporting
         private static void ValidationSection(StringBuilder sb, EvaluationReport r, ReportInputs inputs)
         {
             sb.Append("<section><h2>Replay validation evidence</h2>");
+            sb.Append("<p class=\"note\">Coverage: ").Append(ValidationCoverage(r, inputs))
+              .Append(". Only the replay-regression cases require a validation pair.</p>");
             if (inputs.validations == null || inputs.validations.Count == 0)
             {
                 sb.Append("<p class=\"muted\">No <code>validation.json</code> was found for the evaluated ")
@@ -283,6 +299,14 @@ namespace UnityQA.Reporting
               .Append("<li>Replay-fidelity values are read verbatim from validation.json; the raw ")
               .Append("<code>durationDelta</code> is shown alongside the M6-D <code>alignmentOffsetSec</code> ")
               .Append("and the post-alignment deviation, against the unchanged 0.75u threshold.</li>")
+              .Append("<li>Detection rates are computed over <em>evaluable</em> runs; the per-case N is ")
+              .Append("stated in the Runs/Evaluable columns and must be read with the rate.</li>")
+              .Append("<li>The campaign's <code>repeats</code> value is a CONFIGURED target (metadata). ")
+              .Append("The authoritative run count is the recorded sessions per case, shown as ")
+              .Append("&ldquo;Runs (actual)&rdquo;; a case below the configured target is flagged.</li>")
+              .Append("<li>Consistency requires at least two evaluable runs. With a single run the ")
+              .Append("stored <code>consistent</code> flag is true by definition and demonstrates ")
+              .Append("nothing, so such a case is reported as &ldquo;not demonstrated&rdquo;, never as a pass.</li>")
               .Append("</ul></section>");
         }
 
@@ -328,8 +352,97 @@ namespace UnityQA.Reporting
 
         private static string Num(float v) => v.ToString("0.###", Inv);
 
-        private static string YesNo(bool b)
-            => b ? "<span class=\"badge ok\">yes</span>" : "<span class=\"badge bad\">no</span>";
+        /// <summary>Consistency is only meaningful with at least this many
+        /// evaluable runs; below it EvaluationEngine's `consistent` flag is true
+        /// by definition ("trivially consistent") and proves nothing.</summary>
+        private const int MinRunsForConsistency = 2;
+
+        /// <summary>Render consistency honestly: DEMONSTRATED only at N &gt;= 2;
+        /// a real disagreement at N &gt;= 2 is a failure; N &lt; 2 is neutral
+        /// "not demonstrated" and never a green pass. Reads the stored flag —
+        /// it does not recompute consistency.</summary>
+        private static string ConsistencyCell(EvaluationCaseResult c)
+        {
+            int k = c.evaluableRuns;
+            if (k < MinRunsForConsistency)
+                return "<span class=\"badge na\">not demonstrated (N=" + k.ToString(Inv) + ")</span>";
+            return c.consistent
+                ? "<span class=\"badge ok\">demonstrated (N=" + k.ToString(Inv) + ")</span>"
+                : "<span class=\"badge bad\">NOT consistent (N=" + k.ToString(Inv) + ")</span>";
+        }
+
+        /// <summary>Actual recorded runs, marked against the CONFIGURED target.
+        /// More runs than configured is not a deficiency (the clean control may
+        /// legitimately exceed the planted-case target).</summary>
+        private static string RunsCell(EvaluationCaseResult c, int configured)
+        {
+            string n = c.runs.ToString(Inv);
+            if (configured <= 0) return n;
+            return c.runs >= configured
+                ? n + " <span class=\"mark ok\">&#10003;</span>"
+                : n + " <span class=\"mark warn\">&#9888;</span>";
+        }
+
+        /// <summary>Configured-vs-actual conformance across the PLANTED cases
+        /// (the target applies to planted repeats); the clean control is
+        /// reported separately and counts as exceeding, not short.</summary>
+        private static string RepeatConformance(EvaluationReport r)
+        {
+            int configured = r.repeats;
+            if (configured <= 0) return "no configured repeat count";
+
+            int planted = 0, meet = 0, cleanRuns = -1;
+            var shortfalls = new List<string>();
+            if (r.cases != null)
+            {
+                foreach (EvaluationCaseResult c in r.cases)
+                {
+                    if (c == null) continue;
+                    if (c.isClean) { cleanRuns = c.runs; continue; }
+                    planted++;
+                    if (c.runs >= configured) meet++;
+                    else shortfalls.Add(c.caseId + " (" + c.runs.ToString(Inv) + ")");
+                }
+            }
+
+            string s = Esc(meet.ToString(Inv) + "/" + planted.ToString(Inv) +
+                           " planted cases meet configured N=" + configured.ToString(Inv));
+            s = (meet == planted && planted > 0)
+                ? "<span class=\"badge ok\">" + s + "</span>"
+                : "<span class=\"badge bad\">" + s + "</span>";
+            if (shortfalls.Count > 0)
+                s += " &mdash; below target: " + Esc(string.Join(", ", shortfalls.ToArray()));
+            if (cleanRuns >= 0)
+                s += " <span class=\"muted\">(clean control N=" + cleanRuns.ToString(Inv) +
+                     (cleanRuns >= configured ? ", exceeds target" : "") + ")</span>";
+            return s;
+        }
+
+        /// <summary>How much of the evaluated evidence carries replay-fidelity
+        /// proof: evaluated runs (and cases) that have a validation.json.</summary>
+        private static string ValidationCoverage(EvaluationReport r, ReportInputs inputs)
+        {
+            int runs = 0, coveredRuns = 0, cases = 0, coveredCases = 0;
+            if (r.cases != null)
+            {
+                foreach (EvaluationCaseResult c in r.cases)
+                {
+                    if (c?.perRun == null) continue;
+                    cases++;
+                    bool any = false;
+                    foreach (EvaluationRunResult run in c.perRun)
+                    {
+                        if (run == null || string.IsNullOrEmpty(run.sessionId)) continue;
+                        runs++;
+                        if (inputs.validations != null && inputs.validations.ContainsKey(run.sessionId))
+                        { coveredRuns++; any = true; }
+                    }
+                    if (any) coveredCases++;
+                }
+            }
+            return Esc(coveredRuns.ToString(Inv) + " of " + runs.ToString(Inv) + " evaluated runs (" +
+                       coveredCases.ToString(Inv) + " of " + cases.ToString(Inv) + " cases)");
+        }
 
         private static string StatusDot(bool ok)
             => "<span class=\"dot " + (ok ? "ok" : "bad") + "\"></span>";
@@ -391,6 +504,8 @@ namespace UnityQA.Reporting
                 ".mono{font-family:ui-monospace,SFMono-Regular,Consolas,Menlo,monospace;font-size:12px;word-break:break-all}" +
                 ".badge{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;font-weight:600}" +
                 ".badge.ok{background:#dff3e6;color:#1c6b3f}.badge.bad{background:#fbe3e3;color:#a12222}" +
+                ".badge.na{background:#eceef0;color:#5a6572}" +                 // M8-C2: N<2, not demonstrated
+                ".mark{font-weight:700}.mark.ok{color:#2f9e5f}.mark.warn{color:#c47f17}" + // M8-C2: repeat conformance
                 ".dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline}" +
                 ".dot.ok{background:#2f9e5f}.dot.bad{background:#c0392b}" +
                 ".muted{color:#7a828c}.note{color:#5a6572;font-size:12px;margin:6px 0 2px}" +
