@@ -12,10 +12,11 @@ version-controlled definition of every plant. `Level_Benchmark` remains the
 **Ground truth vs. detection — read this first.** Every entry below is a
 GROUND-TRUTH statement: *the bug exists, here, planted this way* (proven by
 the M6.A EditMode/PlayMode tests). No entry claims the framework has
-DETECTED anything. Detection claims require M6-B (the oracles that judge
+DETECTED anything. Detection claims come from M6-B (the oracles that judge
 these classes) and M6-C (the evaluation run that scores detections against
-this answer key); the **Detected** column stays `pending` until an actual
-M6-C run fills it with evidence.
+this answer key); an M6-C campaign has now been run (see **Campaign status**
+below), and the **Detected** column stays `pending` BY DESIGN — measured
+detection lives only in `evaluation.json`, never in the answer key.
 
 ## Registry
 
@@ -87,9 +88,16 @@ only to SCORE oracle verdicts, never fed to an oracle): PB-001 → `Hazard`
 (SpikeDeath) · PB-004 → `MissingTrigger`. The clean `Level_Benchmark` golden
 run is the negative control: it must raise none of the five oracles.
 
-**Repeats.** Default **N = 5** runs per case (DESIGN.md M8), configurable via
-the campaign's `repeats` field. Every individual run is recorded before
-aggregation so reproducibility/variance is evidenced, not assumed.
+**Repeats.** The campaign's `repeats` field is a CONFIGURED TARGET, not a
+measurement: the authoritative per-case run count is the number of session
+IDs actually listed for that case. The code default remains `N = 5`
+(`EvaluationCampaign.DefaultRepeats`); the campaign authored for M8 sets
+**`repeats: 3`**, and each planted case lists **3 genuinely recorded
+sessions** (the clean control keeps its 5 recorded runs, which exceeds the
+target rather than missing it). Every individual run is recorded before
+aggregation so reproducibility/variance is evidenced, not assumed — and
+because each planted case now has ≥2 evaluable runs, per-case `consistent`
+is a demonstrated agreement rather than a single-run tautology.
 
 **How to run it (Unity):**
 1. Record the sessions per the manual-reproduction and golden-run protocols
@@ -112,7 +120,7 @@ aggregation so reproducibility/variance is evidenced, not assumed.
 {
   "schemaVersion": 1,
   "benchmarkId": "Level_PlantedBugs_A vs Level_Benchmark",
-  "repeats": 5,
+  "repeats": 3,
   "cases": [
     { "caseId": "PB-001", "bugClass": "Collider gap",   "isClean": false,
       "expectedDetectors": ["Hazard"],         "sessionIds": ["<sid>", "..."] },
@@ -138,6 +146,31 @@ insufficient evidence, NOT a miss), `detectionRate = detected / evaluableRuns`
 evaluable bug-runs, and false-positive rate over clean runs; each carries an
 `*Available` flag rather than ever emitting NaN. `generatedUtc` is the only
 non-deterministic field.
+
+## Campaign status (M8 evidence hardening)
+
+An M6-C campaign has been recorded and scored at `repeats: 3`. The numbers
+below are read from `QAData/Reports/evaluation.json`, which stays the single
+authority for them; they are reproduced here only so this file states which
+campaign the answer key has actually been exercised against. The *Detected*
+column in the registry above remains `pending` — this file is ground truth.
+
+| Case | Runs (actual) | Evaluable | Detected | Missed | Indeterminate | Detection rate | Consistency |
+|---|---|---|---|---|---|---|---|
+| PB-001 | 3 | 3 | 3 | 0 | 0 | 100% | demonstrated (N=3) |
+| PB-002 | 3 | 3 | 3 | 0 | 0 | 100% | demonstrated (N=3) |
+| PB-003 | 3 | 3 | 3 | 0 | 0 | 100% | demonstrated (N=3) |
+| PB-004 | 3 | 3 | 3 | 0 | 0 | 100% | demonstrated (N=3) |
+| clean | 5 | 5 | — | — | — | n/a | 0 false positives |
+
+Aggregate: **12/12 evaluable bug-runs detected (100%)**, 0 missed, 0
+indeterminate; **0/5 clean false positives (0%)**. PB-004's three runs are
+three independent original→validation pairs, each recorded on the clean
+`Level_Benchmark` and replayed against the planted level; all three
+`validation.json` records carry `verdict: PASS` with the unchanged 0.75u
+spatial threshold, original outcome `Success`, and an empty replay outcome
+(the replay reaches the door and no completion fires). Evidence corpus:
+40 recorded sessions in `dataset.json`/`analysis.json`.
 
 ## Original Module-1 taxonomy (historical; superseded by the M6 registry)
 

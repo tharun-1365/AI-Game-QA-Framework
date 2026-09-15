@@ -403,7 +403,9 @@ to debugging, IEEE evidence collection, and dataset sharing. New QAPaths
 frozen schema: session.json, events.jsonl, replay.json, validation.json,
 features.json, plus catalog.json at the root), `Datasets/` (dataset.json +
 features.csv), `Analysis/` (analysis.json), `Reports/` (oracle-results.json,
-future M7 output), `Exports/` (reserved for packaged evidence); in a player
+and the M7 output that has since landed there: evaluation-campaign.json,
+evaluation.json/.csv, unityqa-report.html), `Exports/` (reserved for packaged
+evidence); in a player
 build the identical tree sits under persistentDataPath/QAData. Per-session
 replay/validation artifacts deliberately STAY inside their session folder —
 the frozen schema and every reader (catalog, features, oracles) depend on a
@@ -541,6 +543,23 @@ indeterminate, zero-run/null-campaign safety, timestamp-independent
 determinism, answer-key-not-bug-ID scoring, and serialization/CSV. BENCHMARK.md
 gains an M6-C procedure section and keeps the *Detected* column `pending` —
 no measured numbers are recorded until a real Unity campaign runs.
+
+**M6.C — EXECUTED in M8 (evidence hardening).** The campaign above has now
+been recorded and scored against real sessions. The code default stays
+`DefaultRepeats = 5`; the authored campaign sets `repeats: 3` and each
+planted case lists three genuinely recorded sessions (clean control keeps
+its 5, exceeding the target). Measured result, from
+`QAData/Reports/evaluation.json`: 4 planted cases, **12/12 evaluable
+bug-runs detected (100%)**, 0 missed, 0 indeterminate, **0/5 clean false
+positives (0%)**; every planted case reports `consistent` over 3 evaluable
+runs, so per-case consistency is now demonstrated agreement rather than the
+single-run tautology it was at N=1. PB-004's three runs are three
+independent original→validation pairs, all three `validation.json` records
+`verdict: PASS` against the unchanged 0.75u threshold. Evidence corpus: 40
+recorded sessions (`dataset.json`, `analysis.json`). BENCHMARK.md gains a
+*Campaign status* section; its *Detected* column still stays `pending` — the
+ground-truth/detection separation is unchanged, and no oracle, evaluation,
+schema, threshold or benchmark geometry was modified to obtain these numbers.
 
 **A1/A2 — Schema amendments at M2 approval.** Per-stream header line carrying
 `schemaVersion` + `sessionId`; canonical session ID becomes a UUID; folder
