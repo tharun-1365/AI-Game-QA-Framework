@@ -386,7 +386,7 @@ now observes GameRun and reports "Replay Outcome: <Success|SpikeDeath|
 OutOfBounds|Quit>" ("Unknown" if the run never ended during playback), and
 resets an already-Ended run before playing (feeding input to a frozen
 player is never a meaningful replay). Validation gains the discrete second
-axis: validation.json v2 records originalOutcome/replayOutcome (each
+axis: validation.json v3 records originalOutcome/replayOutcome (each
 session's last RunEnded, read by the SAME reader the oracles use) plus
 outcomesCompared/outcomeMatch; a comparable mismatch downgrades a
 trajectory PASS to FAIL, missing outcomes never change the verdict, and a
